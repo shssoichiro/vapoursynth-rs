@@ -254,3 +254,11 @@ impl From<i32> for FormatID {
         FormatID(x)
     }
 }
+
+impl Deref for FormatID {
+    type Target = i32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
