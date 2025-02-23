@@ -56,7 +56,7 @@ impl Drop for Environment {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            ffi::vsscript_freeScript(self.handle.as_ptr());
+            ffi::vsscript_clearEnvironment(self.handle.as_ptr());
         }
     }
 }
