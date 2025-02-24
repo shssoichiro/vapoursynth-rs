@@ -68,8 +68,10 @@ impl Environment {
     /// This function must only be called if an error is present.
     #[inline]
     unsafe fn error(&self) -> CString {
-        let message = ffi::vsscript_getError(self.handle.as_ptr());
-        CStr::from_ptr(message).to_owned()
+        unsafe {
+            let message = ffi::vsscript_getError(self.handle.as_ptr());
+            CStr::from_ptr(message).to_owned()
+        }
     }
 
     /// Creates an empty script environment.

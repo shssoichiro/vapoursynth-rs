@@ -48,9 +48,11 @@ impl<'core> Function<'core> {
     /// The caller must ensure `handle` and the lifetime are valid and API is cached.
     #[inline]
     pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSFuncRef) -> Self {
-        Self {
-            handle: NonNull::new_unchecked(handle),
-            _owner: PhantomData,
+        unsafe {
+            Self {
+                handle: NonNull::new_unchecked(handle),
+                _owner: PhantomData,
+            }
         }
     }
 
@@ -77,25 +79,27 @@ impl<'core> Function<'core> {
         ) where
             F: Fn(API, CoreRef<'core>, &Map<'core>, &mut Map<'core>) + Send + Sync + 'core,
         {
-            let closure = move || {
-                let api = API::get_cached();
-                let core = CoreRef::from_ptr(core);
-                let in_ = MapRef::from_ptr(in_);
-                let mut out = MapRefMut::from_ptr(out);
-                let callback = Box::from_raw(user_data as *mut F);
+            unsafe {
+                let closure = move || {
+                    let api = API::get_cached();
+                    let core = CoreRef::from_ptr(core);
+                    let in_ = MapRef::from_ptr(in_);
+                    let mut out = MapRefMut::from_ptr(out);
+                    let callback = Box::from_raw(user_data as *mut F);
 
-                callback(api, core, &in_, &mut out);
+                    callback(api, core, &in_, &mut out);
 
-                mem::forget(callback);
-            };
+                    mem::forget(callback);
+                };
 
-            if panic::catch_unwind(closure).is_err() {
-                process::abort();
+                if panic::catch_unwind(closure).is_err() {
+                    process::abort();
+                }
             }
         }
 
         unsafe extern "system" fn c_free<F>(user_data: *mut c_void) {
-            drop(Box::from_raw(user_data as *mut F))
+            unsafe { drop(Box::from_raw(user_data as *mut F)) }
         }
 
         let data = Box::new(callback);

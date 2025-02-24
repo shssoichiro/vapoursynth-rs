@@ -34,35 +34,37 @@ unsafe extern "system" fn init(
     core: *mut ffi::VSCore,
     _vsapi: *const ffi::VSAPI,
 ) {
-    let closure = move || {
-        let core = CoreRef::from_ptr(core);
-        // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
-        // retrieving it.
-        let filter =
-            Box::from_raw(*(instance_data as *mut *mut Box<dyn Filter<'static> + 'static>));
-
-        let vi = filter
-            .video_info(API::get_cached(), core)
-            .into_iter()
-            .map(VideoInfo::ffi_type)
-            .collect::<Vec<_>>();
-        API::get_cached().set_video_info(&vi, node);
-
-        mem::forget(filter);
-    };
-
-    if panic::catch_unwind(closure).is_err() {
+    unsafe {
         let closure = move || {
-            // We have to leak filter here because we can't guarantee that it's in a consistent
-            // state after a panic.
-            //
-            // Just set the error message.
-            let mut out = MapRefMut::from_ptr(out);
-            out.set_error("Panic during Filter::video_info()");
+            let core = CoreRef::from_ptr(core);
+            // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
+            // retrieving it.
+            let filter =
+                Box::from_raw(*(instance_data as *mut *mut Box<dyn Filter<'static> + 'static>));
+
+            let vi = filter
+                .video_info(API::get_cached(), core)
+                .into_iter()
+                .map(VideoInfo::ffi_type)
+                .collect::<Vec<_>>();
+            API::get_cached().set_video_info(&vi, node);
+
+            mem::forget(filter);
         };
 
         if panic::catch_unwind(closure).is_err() {
-            process::abort();
+            let closure = move || {
+                // We have to leak filter here because we can't guarantee that it's in a consistent
+                // state after a panic.
+                //
+                // Just set the error message.
+                let mut out = MapRefMut::from_ptr(out);
+                out.set_error("Panic during Filter::video_info()");
+            };
+
+            if panic::catch_unwind(closure).is_err() {
+                process::abort();
+            }
         }
     }
 }
@@ -73,15 +75,17 @@ unsafe extern "system" fn free(
     core: *mut ffi::VSCore,
     _vsapi: *const ffi::VSAPI,
 ) {
-    let closure = move || {
-        // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
-        // retrieving it.
-        let filter = Box::from_raw(instance_data as *mut Box<dyn Filter<'static> + 'static>);
-        drop(filter);
-    };
+    unsafe {
+        let closure = move || {
+            // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
+            // retrieving it.
+            let filter = Box::from_raw(instance_data as *mut Box<dyn Filter<'static> + 'static>);
+            drop(filter);
+        };
 
-    if panic::catch_unwind(closure).is_err() {
-        process::abort();
+        if panic::catch_unwind(closure).is_err() {
+            process::abort();
+        }
     }
 }
 
@@ -95,71 +99,73 @@ unsafe extern "system" fn get_frame(
     core: *mut ffi::VSCore,
     _vsapi: *const ffi::VSAPI,
 ) -> *const ffi::VSFrameRef {
-    let closure = move || {
-        let api = API::get_cached();
-        let core = CoreRef::from_ptr(core);
-        let context = FrameContext::from_ptr(frame_ctx);
+    unsafe {
+        let closure = move || {
+            let api = API::get_cached();
+            let core = CoreRef::from_ptr(core);
+            let context = FrameContext::from_ptr(frame_ctx);
 
-        // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
-        // retrieving it.
-        let filter =
-            Box::from_raw(*(instance_data as *mut *mut Box<dyn Filter<'static> + 'static>));
+            // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
+            // retrieving it.
+            let filter =
+                Box::from_raw(*(instance_data as *mut *mut Box<dyn Filter<'static> + 'static>));
 
-        debug_assert!(n >= 0);
-        let n = n as usize;
+            debug_assert!(n >= 0);
+            let n = n as usize;
 
-        let rv = match activation_reason {
-            x if x == ffi::VSActivationReason::arInitial as _ => {
-                match filter.get_frame_initial(api, core, context, n) {
-                    Ok(Some(frame)) => {
-                        let ptr = frame.deref().deref() as *const _;
-                        // The ownership is transferred to the caller.
-                        mem::forget(frame);
-                        ptr
-                    }
-                    Ok(None) => ptr::null(),
-                    Err(err) => {
-                        let mut buf = String::with_capacity(64);
+            let rv = match activation_reason {
+                x if x == ffi::VSActivationReason::arInitial as _ => {
+                    match filter.get_frame_initial(api, core, context, n) {
+                        Ok(Some(frame)) => {
+                            let ptr = frame.deref().deref() as *const _;
+                            // The ownership is transferred to the caller.
+                            mem::forget(frame);
+                            ptr
+                        }
+                        Ok(None) => ptr::null(),
+                        Err(err) => {
+                            let mut buf = String::with_capacity(64);
 
-                        write!(buf, "Error in Filter::get_frame_initial(): {}", err);
+                            write!(buf, "Error in Filter::get_frame_initial(): {}", err);
 
-                        write!(buf, "{}", err);
+                            write!(buf, "{}", err);
 
-                        let buf = CString::new(buf.replace('\0', "\\0")).unwrap();
-                        api.set_filter_error(buf.as_ptr(), frame_ctx);
+                            let buf = CString::new(buf.replace('\0', "\\0")).unwrap();
+                            api.set_filter_error(buf.as_ptr(), frame_ctx);
 
-                        ptr::null()
-                    }
-                }
-            }
-            x if x == ffi::VSActivationReason::arAllFramesReady as _ => {
-                match filter.get_frame(api, core, context, n) {
-                    Ok(frame) => {
-                        let ptr = frame.deref().deref() as *const _;
-                        // The ownership is transferred to the caller.
-                        mem::forget(frame);
-                        ptr
-                    }
-                    Err(err) => {
-                        let buf = format!("{}", err);
-                        let buf = CString::new(buf.replace('\0', "\\0")).unwrap();
-                        api.set_filter_error(buf.as_ptr(), frame_ctx);
-
-                        ptr::null()
+                            ptr::null()
+                        }
                     }
                 }
-            }
-            _ => ptr::null(),
+                x if x == ffi::VSActivationReason::arAllFramesReady as _ => {
+                    match filter.get_frame(api, core, context, n) {
+                        Ok(frame) => {
+                            let ptr = frame.deref().deref() as *const _;
+                            // The ownership is transferred to the caller.
+                            mem::forget(frame);
+                            ptr
+                        }
+                        Err(err) => {
+                            let buf = format!("{}", err);
+                            let buf = CString::new(buf.replace('\0', "\\0")).unwrap();
+                            api.set_filter_error(buf.as_ptr(), frame_ctx);
+
+                            ptr::null()
+                        }
+                    }
+                }
+                _ => ptr::null(),
+            };
+
+            mem::forget(filter);
+
+            rv
         };
 
-        mem::forget(filter);
-
-        rv
-    };
-
-    match panic::catch_unwind(closure) {
-        Ok(frame) => frame,
-        Err(_) => process::abort(),
+        match panic::catch_unwind(closure) {
+            Ok(frame) => frame,
+            Err(_) => process::abort(),
+        }
     }
 }
 
@@ -171,55 +177,57 @@ pub(crate) unsafe extern "system" fn create<F: FilterFunction>(
     core: *mut ffi::VSCore,
     api: *const ffi::VSAPI,
 ) {
-    let closure = move || {
-        API::set(api);
+    unsafe {
+        let closure = move || {
+            API::set(api);
 
-        let args = MapRef::from_ptr(in_);
-        let mut out = MapRefMut::from_ptr(out);
-        let core = CoreRef::from_ptr(core);
-        let data = Box::from_raw(user_data as *mut FilterFunctionData<F>);
+            let args = MapRef::from_ptr(in_);
+            let mut out = MapRefMut::from_ptr(out);
+            let core = CoreRef::from_ptr(core);
+            let data = Box::from_raw(user_data as *mut FilterFunctionData<F>);
 
-        let filter = match data.filter_function.create(API::get_cached(), core, &args) {
-            Ok(Some(filter)) => Some(Box::new(filter)),
-            Ok(None) => None,
-            Err(err) => {
-                let mut buf = String::with_capacity(64);
+            let filter = match data.filter_function.create(API::get_cached(), core, &args) {
+                Ok(Some(filter)) => Some(Box::new(filter)),
+                Ok(None) => None,
+                Err(err) => {
+                    let mut buf = String::with_capacity(64);
 
-                write!(
-                    buf,
-                    "Error in Filter::create() of {}: {}",
-                    data.name.to_str().unwrap(),
-                    err
+                    write!(
+                        buf,
+                        "Error in Filter::create() of {}: {}",
+                        data.name.to_str().unwrap(),
+                        err
+                    );
+
+                    write!(buf, "{}", err);
+
+                    out.set_error(&buf.replace('\0', "\\0")).unwrap();
+                    None
+                }
+            };
+
+            if let Some(filter) = filter {
+                API::get_cached().create_filter(
+                    in_,
+                    out.deref_mut().deref_mut(),
+                    data.name.as_ptr(),
+                    init,
+                    get_frame,
+                    Some(free),
+                    ffi::VSFilterMode::fmParallel,
+                    ffi::VSNodeFlags(0),
+                    Box::into_raw(filter) as *mut _,
+                    core.ptr(),
                 );
-
-                write!(buf, "{}", err);
-
-                out.set_error(&buf.replace('\0', "\\0")).unwrap();
-                None
             }
+
+            mem::forget(data);
         };
 
-        if let Some(filter) = filter {
-            API::get_cached().create_filter(
-                in_,
-                out.deref_mut().deref_mut(),
-                data.name.as_ptr(),
-                init,
-                get_frame,
-                Some(free),
-                ffi::VSFilterMode::fmParallel,
-                ffi::VSNodeFlags(0),
-                Box::into_raw(filter) as *mut _,
-                core.ptr(),
-            );
+        if panic::catch_unwind(closure).is_err() {
+            // The `FilterFunction` might have been left in an inconsistent state, so we have to abort.
+            process::abort();
         }
-
-        mem::forget(data);
-    };
-
-    if panic::catch_unwind(closure).is_err() {
-        // The `FilterFunction` might have been left in an inconsistent state, so we have to abort.
-        process::abort();
     }
 }
 
@@ -235,23 +243,25 @@ pub unsafe fn call_config_func(
     plugin: *mut c_void,
     metadata: Metadata,
 ) {
-    let config_func = *(&config_func as *const _ as *const ffi::VSConfigPlugin);
+    unsafe {
+        let config_func = *(&config_func as *const _ as *const ffi::VSConfigPlugin);
 
-    let identifier_cstring = CString::new(metadata.identifier)
-        .expect("Couldn't convert the plugin identifier to a CString");
-    let namespace_cstring = CString::new(metadata.namespace)
-        .expect("Couldn't convert the plugin namespace to a CString");
-    let name_cstring =
-        CString::new(metadata.name).expect("Couldn't convert the plugin name to a CString");
+        let identifier_cstring = CString::new(metadata.identifier)
+            .expect("Couldn't convert the plugin identifier to a CString");
+        let namespace_cstring = CString::new(metadata.namespace)
+            .expect("Couldn't convert the plugin namespace to a CString");
+        let name_cstring =
+            CString::new(metadata.name).expect("Couldn't convert the plugin name to a CString");
 
-    config_func(
-        identifier_cstring.as_ptr(),
-        namespace_cstring.as_ptr(),
-        name_cstring.as_ptr(),
-        ffi::VAPOURSYNTH_API_VERSION,
-        if metadata.read_only { 1 } else { 0 },
-        plugin as *mut ffi::VSPlugin,
-    );
+        config_func(
+            identifier_cstring.as_ptr(),
+            namespace_cstring.as_ptr(),
+            name_cstring.as_ptr(),
+            ffi::VAPOURSYNTH_API_VERSION,
+            if metadata.read_only { 1 } else { 0 },
+            plugin as *mut ffi::VSPlugin,
+        );
+    }
 }
 
 /// Registers the filter `F`.
@@ -266,25 +276,27 @@ pub unsafe fn call_register_func<F: FilterFunction>(
     plugin: *mut c_void,
     filter_function: F,
 ) {
-    let register_func = *(&register_func as *const _ as *const ffi::VSRegisterFunction);
+    unsafe {
+        let register_func = *(&register_func as *const _ as *const ffi::VSRegisterFunction);
 
-    let name_cstring = CString::new(filter_function.name())
-        .expect("Couldn't convert the filter name to a CString");
-    let args_cstring = CString::new(filter_function.args())
-        .expect("Couldn't convert the filter args to a CString");
+        let name_cstring = CString::new(filter_function.name())
+            .expect("Couldn't convert the filter name to a CString");
+        let args_cstring = CString::new(filter_function.args())
+            .expect("Couldn't convert the filter args to a CString");
 
-    let data = Box::new(FilterFunctionData {
-        filter_function,
-        name: name_cstring,
-    });
+        let data = Box::new(FilterFunctionData {
+            filter_function,
+            name: name_cstring,
+        });
 
-    register_func(
-        data.name.as_ptr(),
-        args_cstring.as_ptr(),
-        create::<F>,
-        Box::into_raw(data) as _,
-        plugin as *mut ffi::VSPlugin,
-    );
+        register_func(
+            data.name.as_ptr(),
+            args_cstring.as_ptr(),
+            create::<F>,
+            Box::into_raw(data) as _,
+            plugin as *mut ffi::VSPlugin,
+        );
+    }
 }
 
 /// Exports a VapourSynth plugin from this library.
@@ -315,7 +327,7 @@ macro_rules! export_vapoursynth_plugin {
         use ::std::os::raw::c_void;
 
         #[allow(non_snake_case)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "system" fn VapourSynthPluginInit(
             config_func: *const c_void,
             register_func: *const c_void,

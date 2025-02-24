@@ -121,8 +121,10 @@ impl FrameRef<'_> {
     /// The caller must ensure `handle` and the lifetime is valid and API is cached.
     #[inline]
     pub(crate) unsafe fn from_ptr(handle: *const ffi::VSFrameRef) -> Self {
-        Self {
-            frame: Frame::from_ptr(handle),
+        unsafe {
+            Self {
+                frame: Frame::from_ptr(handle),
+            }
         }
     }
 }
@@ -134,8 +136,10 @@ impl<'core> FrameRefMut<'core> {
     /// The caller must ensure `handle` and the lifetime is valid and API is cached.
     #[inline]
     pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSFrameRef) -> Self {
-        Self {
-            frame: Frame::from_ptr(handle),
+        unsafe {
+            Self {
+                frame: Frame::from_ptr(handle),
+            }
         }
     }
 
@@ -201,13 +205,15 @@ impl<'core> Frame<'core> {
     /// mutability.
     #[inline]
     pub(crate) unsafe fn from_ptr(handle: *const ffi::VSFrameRef) -> Self {
-        Self {
-            handle: NonNull::new_unchecked(handle as *mut ffi::VSFrameRef),
-            format: unsafe {
-                let ptr = API::get_cached().get_frame_format(&*handle);
-                Format::from_ptr(ptr)
-            },
-            _owner: PhantomData,
+        unsafe {
+            Self {
+                handle: NonNull::new_unchecked(handle as *mut ffi::VSFrameRef),
+                format: unsafe {
+                    let ptr = API::get_cached().get_frame_format(&*handle);
+                    Format::from_ptr(ptr)
+                },
+                _owner: PhantomData,
+            }
         }
     }
 

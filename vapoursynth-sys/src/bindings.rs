@@ -548,7 +548,7 @@ pub struct VSAPI {
 }
 
 #[cfg(feature = "vapoursynth-functions")]
-extern "system" {
+unsafe extern "system" {
     pub fn getVapourSynthAPI(version: c_int) -> *const VSAPI;
 }
 
@@ -564,7 +564,7 @@ pub enum VSEvalFlags {
 }
 
 #[cfg(feature = "vsscript-functions")]
-extern "system" {
+unsafe extern "system" {
     #[cfg(feature = "gte-vsscript-api-31")]
     pub fn vsscript_getApiVersion() -> c_int;
     pub fn vsscript_init() -> c_int;

@@ -17,12 +17,12 @@ mod inner {
     use std::ffi::OsStr;
     use std::fmt::Debug;
     use std::fs::File;
-    use std::io::{self, stdout, Stdout, Write};
+    use std::io::{self, Stdout, Write, stdout};
     use std::ops::Deref;
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::Instant;
 
-    use anyhow::{anyhow, bail, ensure, Context, Error};
+    use anyhow::{Context, Error, anyhow, bail, ensure};
 
     use self::clap::{Arg, Command};
     use self::num_rational::Ratio;

@@ -81,9 +81,11 @@ impl<'core> Node<'core> {
     /// The caller must ensure `handle` and the lifetime is valid and API is cached.
     #[inline]
     pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSNodeRef) -> Self {
-        Self {
-            handle: NonNull::new_unchecked(handle),
-            _owner: PhantomData,
+        unsafe {
+            Self {
+                handle: NonNull::new_unchecked(handle),
+                _owner: PhantomData,
+            }
         }
     }
 
@@ -203,30 +205,32 @@ impl<'core> Node<'core> {
             node: *mut ffi::VSNodeRef,
             error_msg: *const c_char,
         ) {
-            // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
-            // retrieving it.
-            let user_data = Box::from_raw(user_data as *mut CallbackData<'static>);
+            unsafe {
+                // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
+                // retrieving it.
+                let user_data = Box::from_raw(user_data as *mut CallbackData<'static>);
 
-            let closure = panic::AssertUnwindSafe(move || {
-                let frame = if frame.is_null() {
-                    debug_assert!(!error_msg.is_null());
-                    let error_msg = Cow::Borrowed(CStr::from_ptr(error_msg));
-                    Err(GetFrameError::new(error_msg))
-                } else {
-                    debug_assert!(error_msg.is_null());
-                    Ok(FrameRef::from_ptr(frame))
-                };
+                let closure = panic::AssertUnwindSafe(move || {
+                    let frame = if frame.is_null() {
+                        debug_assert!(!error_msg.is_null());
+                        let error_msg = Cow::Borrowed(CStr::from_ptr(error_msg));
+                        Err(GetFrameError::new(error_msg))
+                    } else {
+                        debug_assert!(error_msg.is_null());
+                        Ok(FrameRef::from_ptr(frame))
+                    };
 
-                let node = Node::from_ptr(node);
+                    let node = Node::from_ptr(node);
 
-                debug_assert!(n >= 0);
-                let n = n as usize;
+                    debug_assert!(n >= 0);
+                    let n = n as usize;
 
-                user_data.callback.call(frame, n, node);
-            });
+                    user_data.callback.call(frame, n, node);
+                });
 
-            if panic::catch_unwind(closure).is_err() {
-                process::abort();
+                if panic::catch_unwind(closure).is_err() {
+                    process::abort();
+                }
             }
         }
 

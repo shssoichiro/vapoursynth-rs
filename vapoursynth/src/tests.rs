@@ -399,17 +399,19 @@ mod need_api_and_vsscript {
     fn clear_output() {
         let env =
             vsscript::Environment::from_script(include_str!("../test-vpy/green.vpy")).unwrap();
-        assert!(env
-            .clear_output(1)
-            .err()
-            .map(|e| matches!(e, vsscript::Error::NoOutput))
-            .unwrap_or(false));
+        assert!(
+            env.clear_output(1)
+                .err()
+                .map(|e| matches!(e, vsscript::Error::NoOutput))
+                .unwrap_or(false)
+        );
         assert!(env.clear_output(0).is_ok());
-        assert!(env
-            .clear_output(0)
-            .err()
-            .map(|e| matches!(e, vsscript::Error::NoOutput))
-            .unwrap_or(false));
+        assert!(
+            env.clear_output(0)
+                .err()
+                .map(|e| matches!(e, vsscript::Error::NoOutput))
+                .unwrap_or(false)
+        );
     }
 
     #[test]
@@ -604,19 +606,21 @@ mod need_api_and_vsscript {
         let std = std.unwrap();
 
         let functions = std.functions();
-        assert!(functions
-            .keys()
-            .filter_map(|key| unsafe {
-                bind(
-                    key,
-                    CStr::from_ptr(functions.get_data(key).unwrap().as_ptr() as _),
-                )
-                .to_str()
-                .ok()
-                .map(|value| (key, value))
-            })
-            .filter_map(|(key, value)| value.split(';').next().map(|name| (key, name)))
-            .any(|x| x == ("CropRel", "CropRel")));
+        assert!(
+            functions
+                .keys()
+                .filter_map(|key| unsafe {
+                    bind(
+                        key,
+                        CStr::from_ptr(functions.get_data(key).unwrap().as_ptr() as _),
+                    )
+                    .to_str()
+                    .ok()
+                    .map(|value| (key, value))
+                })
+                .filter_map(|(key, value)| value.split(';').next().map(|name| (key, name)))
+                .any(|x| x == ("CropRel", "CropRel"))
+        );
 
         #[cfg(feature = "gte-vsscript-api-31")]
         let (node, _) = env.get_output(0).unwrap();
@@ -676,8 +680,8 @@ mod need_api_and_vsscript {
 ))]
 mod need_api {
     use std::ffi::CString;
-    use std::sync::mpsc::{channel, Sender};
     use std::sync::Mutex;
+    use std::sync::mpsc::{Sender, channel};
 
     use super::*;
     use prelude::*;
