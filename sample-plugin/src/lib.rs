@@ -195,7 +195,7 @@ impl<'core> Filter<'core> for RandomNoise {
                         let data = frame.plane_row_mut::<u8>(plane, row);
                         for col in 0..data.len() {
                             unsafe {
-                                ptr::write(data.as_mut_ptr().add(col), rng.gen());
+                                ptr::write(data.as_mut_ptr().add(col), rng.r#gen());
                             }
                         }
                     }
@@ -203,7 +203,7 @@ impl<'core> Filter<'core> for RandomNoise {
                         let data = frame.plane_row_mut::<u16>(plane, row);
                         for col in 0..data.len() {
                             unsafe {
-                                ptr::write(data.as_mut_ptr().add(col), rng.gen());
+                                ptr::write(data.as_mut_ptr().add(col), rng.r#gen());
                             }
                         }
                     }
@@ -211,7 +211,7 @@ impl<'core> Filter<'core> for RandomNoise {
                         let data = frame.plane_row_mut::<u32>(plane, row);
                         for col in 0..data.len() {
                             unsafe {
-                                ptr::write(data.as_mut_ptr().add(col), rng.gen());
+                                ptr::write(data.as_mut_ptr().add(col), rng.r#gen());
                             }
                         }
                     }

@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate vapoursynth;
 
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{Context, Error, anyhow, bail};
 
 use std::env;
 use vapoursynth::prelude::*;

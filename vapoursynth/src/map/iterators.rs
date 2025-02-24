@@ -63,20 +63,22 @@ macro_rules! impl_value_iter {
             /// The caller must ensure `key` is valid.
             #[inline]
             pub(crate) unsafe fn new(map: &'map Map<'elem>, key: CString) -> Result<Self> {
-                // Check if the value type is correct.
-                match map.value_type_raw_unchecked(&key)? {
-                    $value_type => {}
-                    _ => return Err(Error::WrongValueType),
-                };
+                unsafe {
+                    // Check if the value type is correct.
+                    match map.value_type_raw_unchecked(&key)? {
+                        $value_type => {}
+                        _ => return Err(Error::WrongValueType),
+                    };
 
-                let count = map.value_count_raw_unchecked(&key)? as i32;
-                Ok(Self {
-                    map,
-                    key,
-                    count,
-                    index: 0,
-                    _variance: PhantomData,
-                })
+                    let count = map.value_count_raw_unchecked(&key)? as i32;
+                    Ok(Self {
+                        map,
+                        key,
+                        count,
+                        index: 0,
+                        _variance: PhantomData,
+                    })
+                }
             }
         }
 

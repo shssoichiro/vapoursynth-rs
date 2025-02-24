@@ -109,7 +109,7 @@ impl<'core> Format<'core> {
     /// The caller must ensure `ptr` and the lifetime is valid.
     #[inline]
     pub(crate) unsafe fn from_ptr(ptr: *const ffi::VSFormat) -> Self {
-        Self { handle: &*ptr }
+        unsafe { Self { handle: &*ptr } }
     }
 
     /// Gets the unique identifier of this format.

@@ -1,6 +1,6 @@
 [package]
 name = "vapoursynth-sys"
-edition = "2021"
+edition = "2024"
 version = "0.4.1"                                           # remember to update html_root_url
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 description = "Rust bindings for vapoursynth and vsscript."

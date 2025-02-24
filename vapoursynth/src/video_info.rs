@@ -69,63 +69,65 @@ impl VideoInfo<'_> {
     /// # Safety
     /// The caller must ensure `ptr` and the lifetime is valid.
     pub(crate) unsafe fn from_ptr(ptr: *const ffi::VSVideoInfo) -> Self {
-        let info = &*ptr;
+        unsafe {
+            let info = &*ptr;
 
-        debug_assert!(info.fpsNum >= 0);
-        debug_assert!(info.fpsDen >= 0);
-        debug_assert!(info.width >= 0);
-        debug_assert!(info.height >= 0);
-        debug_assert!(info.numFrames >= 0);
+            debug_assert!(info.fpsNum >= 0);
+            debug_assert!(info.fpsDen >= 0);
+            debug_assert!(info.width >= 0);
+            debug_assert!(info.height >= 0);
+            debug_assert!(info.numFrames >= 0);
 
-        let format = if info.format.is_null() {
-            Property::Variable
-        } else {
-            Property::Constant(Format::from_ptr(info.format))
-        };
-
-        let framerate = if info.fpsNum == 0 {
-            debug_assert!(info.fpsDen == 0);
-            Property::Variable
-        } else {
-            debug_assert!(info.fpsDen != 0);
-            Property::Constant(Framerate {
-                numerator: info.fpsNum as _,
-                denominator: info.fpsDen as _,
-            })
-        };
-
-        let resolution = if info.width == 0 {
-            debug_assert!(info.height == 0);
-            Property::Variable
-        } else {
-            debug_assert!(info.height != 0);
-            Property::Constant(Resolution {
-                width: info.width as _,
-                height: info.height as _,
-            })
-        };
-
-        #[cfg(feature = "gte-vapoursynth-api-32")]
-        let num_frames = {
-            debug_assert!(info.numFrames != 0);
-            info.numFrames as _
-        };
-
-        #[cfg(not(feature = "gte-vapoursynth-api-32"))]
-        let num_frames = {
-            if info.numFrames == 0 {
+            let format = if info.format.is_null() {
                 Property::Variable
             } else {
-                Property::Constant(info.numFrames as _)
-            }
-        };
+                Property::Constant(Format::from_ptr(info.format))
+            };
 
-        Self {
-            format,
-            framerate,
-            resolution,
-            num_frames,
-            flags: ffi::VSNodeFlags(info.flags).into(),
+            let framerate = if info.fpsNum == 0 {
+                debug_assert!(info.fpsDen == 0);
+                Property::Variable
+            } else {
+                debug_assert!(info.fpsDen != 0);
+                Property::Constant(Framerate {
+                    numerator: info.fpsNum as _,
+                    denominator: info.fpsDen as _,
+                })
+            };
+
+            let resolution = if info.width == 0 {
+                debug_assert!(info.height == 0);
+                Property::Variable
+            } else {
+                debug_assert!(info.height != 0);
+                Property::Constant(Resolution {
+                    width: info.width as _,
+                    height: info.height as _,
+                })
+            };
+
+            #[cfg(feature = "gte-vapoursynth-api-32")]
+            let num_frames = {
+                debug_assert!(info.numFrames != 0);
+                info.numFrames as _
+            };
+
+            #[cfg(not(feature = "gte-vapoursynth-api-32"))]
+            let num_frames = {
+                if info.numFrames == 0 {
+                    Property::Variable
+                } else {
+                    Property::Constant(info.numFrames as _)
+                }
+            };
+
+            Self {
+                format,
+                framerate,
+                resolution,
+                num_frames,
+                flags: ffi::VSNodeFlags(info.flags).into(),
+            }
         }
     }
 

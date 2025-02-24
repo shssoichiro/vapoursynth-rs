@@ -44,7 +44,7 @@ macro_rules! prop_get_something {
             index: i32,
             error: &mut i32,
         ) -> $rv {
-            (self.handle.as_ref().$func)(map, key, index, error)
+            unsafe { (self.handle.as_ref().$func)(map, key, index, error) }
         }
     };
 }
@@ -59,7 +59,7 @@ macro_rules! prop_set_something {
             value: $type,
             append: ffi::VSPropAppendMode,
         ) -> i32 {
-            (self.handle.as_ref().$func)(map, key, value, append as i32)
+            unsafe { (self.handle.as_ref().$func)(map, key, value, append as i32) }
         }
     };
 }
@@ -154,8 +154,10 @@ impl API {
     /// This function assumes the cache contains a valid API pointer.
     #[inline]
     pub(crate) unsafe fn get_cached() -> Self {
-        Self {
-            handle: NonNull::new_unchecked(RAW_API.load(Ordering::Relaxed)),
+        unsafe {
+            Self {
+                handle: NonNull::new_unchecked(RAW_API.load(Ordering::Relaxed)),
+            }
         }
     }
 
@@ -208,23 +210,25 @@ impl API {
             msg: *const c_char,
             user_data: *mut c_void,
         ) {
-            let mut user_data = Box::from_raw(user_data as *mut CallbackData);
+            unsafe {
+                let mut user_data = Box::from_raw(user_data as *mut CallbackData);
 
-            {
-                let closure = panic::AssertUnwindSafe(|| {
-                    let message_type = MessageType::from_ffi_type(msg_type).unwrap();
-                    let message = CStr::from_ptr(msg);
+                {
+                    let closure = panic::AssertUnwindSafe(|| {
+                        let message_type = MessageType::from_ffi_type(msg_type).unwrap();
+                        let message = CStr::from_ptr(msg);
 
-                    (user_data.callback)(message_type, message);
-                });
+                        (user_data.callback)(message_type, message);
+                    });
 
-                if panic::catch_unwind(closure).is_err() {
-                    process::abort();
+                    if panic::catch_unwind(closure).is_err() {
+                        process::abort();
+                    }
                 }
-            }
 
-            // Don't drop user_data, we're not done using it.
-            mem::forget(user_data);
+                // Don't drop user_data, we're not done using it.
+                mem::forget(user_data);
+            }
         }
 
         let user_data = Box::new(CallbackData {
@@ -268,28 +272,32 @@ impl API {
             msg: *const c_char,
             user_data: *mut c_void,
         ) {
-            let mut user_data = Box::from_raw(user_data as *mut CallbackData);
+            unsafe {
+                let mut user_data = Box::from_raw(user_data as *mut CallbackData);
 
-            {
-                let closure = panic::AssertUnwindSafe(|| {
-                    let message_type = MessageType::from_ffi_type(msg_type).unwrap();
-                    let message = CStr::from_ptr(msg);
+                {
+                    let closure = panic::AssertUnwindSafe(|| {
+                        let message_type = MessageType::from_ffi_type(msg_type).unwrap();
+                        let message = CStr::from_ptr(msg);
 
-                    (user_data.callback)(message_type, message);
-                });
+                        (user_data.callback)(message_type, message);
+                    });
 
-                if panic::catch_unwind(closure).is_err() {
-                    process::abort();
+                    if panic::catch_unwind(closure).is_err() {
+                        process::abort();
+                    }
                 }
-            }
 
-            // Don't drop user_data, we're not done using it.
-            mem::forget(user_data);
+                // Don't drop user_data, we're not done using it.
+                mem::forget(user_data);
+            }
         }
 
         unsafe extern "system" fn c_free_callback(user_data: *mut c_void) {
-            let user_data = Box::from_raw(user_data as *mut CallbackData);
-            drop(user_data);
+            unsafe {
+                let user_data = Box::from_raw(user_data as *mut CallbackData);
+                drop(user_data);
+            }
         }
 
         let user_data = Box::new(CallbackData {
@@ -329,18 +337,20 @@ impl API {
             msg: *const c_char,
             user_data: *mut c_void,
         ) {
-            let closure = panic::AssertUnwindSafe(|| {
-                let message_type = MessageType::from_ffi_type(msg_type).unwrap();
-                let message = CStr::from_ptr(msg);
+            unsafe {
+                let closure = panic::AssertUnwindSafe(|| {
+                    let message_type = MessageType::from_ffi_type(msg_type).unwrap();
+                    let message = CStr::from_ptr(msg);
 
-                // Is there a better way of casting this?
-                let callback = *(&user_data as *const _ as *const fn(MessageType, &CStr));
-                (callback)(message_type, message);
-            });
+                    // Is there a better way of casting this?
+                    let callback = *(&user_data as *const _ as *const fn(MessageType, &CStr));
+                    (callback)(message_type, message);
+                });
 
-            if panic::catch_unwind(closure).is_err() {
-                eprintln!("panic in the set_message_handler_trivial() callback, aborting");
-                process::abort();
+                if panic::catch_unwind(closure).is_err() {
+                    eprintln!("panic in the set_message_handler_trivial() callback, aborting");
+                    process::abort();
+                }
             }
         }
 
@@ -373,18 +383,20 @@ impl API {
             msg: *const c_char,
             user_data: *mut c_void,
         ) {
-            let closure = panic::AssertUnwindSafe(|| {
-                let message_type = MessageType::from_ffi_type(msg_type).unwrap();
-                let message = CStr::from_ptr(msg);
+            unsafe {
+                let closure = panic::AssertUnwindSafe(|| {
+                    let message_type = MessageType::from_ffi_type(msg_type).unwrap();
+                    let message = CStr::from_ptr(msg);
 
-                // Is there a better way of casting this?
-                let callback = *(&user_data as *const _ as *const fn(MessageType, &CStr));
-                (callback)(message_type, message);
-            });
+                    // Is there a better way of casting this?
+                    let callback = *(&user_data as *const _ as *const fn(MessageType, &CStr));
+                    (callback)(message_type, message);
+                });
 
-            if panic::catch_unwind(closure).is_err() {
-                eprintln!("panic in the set_message_handler_trivial() callback, aborting");
-                process::abort();
+                if panic::catch_unwind(closure).is_err() {
+                    eprintln!("panic in the set_message_handler_trivial() callback, aborting");
+                    process::abort();
+                }
             }
         }
 
@@ -428,7 +440,9 @@ impl API {
     /// The caller must ensure `node` is valid.
     #[inline]
     pub(crate) unsafe fn free_node(self, node: *mut ffi::VSNodeRef) {
-        (self.handle.as_ref().freeNode)(node);
+        unsafe {
+            (self.handle.as_ref().freeNode)(node);
+        }
     }
 
     /// Clones `node`.
@@ -437,7 +451,7 @@ impl API {
     /// The caller must ensure `node` is valid.
     #[inline]
     pub(crate) unsafe fn clone_node(self, node: *mut ffi::VSNodeRef) -> *mut ffi::VSNodeRef {
-        (self.handle.as_ref().cloneNodeRef)(node)
+        unsafe { (self.handle.as_ref().cloneNodeRef)(node) }
     }
 
     /// Returns a pointer to the video info associated with `node`. The pointer is valid as long as
@@ -450,7 +464,7 @@ impl API {
         self,
         node: *mut ffi::VSNodeRef,
     ) -> *const ffi::VSVideoInfo {
-        (self.handle.as_ref().getVideoInfo)(node)
+        unsafe { (self.handle.as_ref().getVideoInfo)(node) }
     }
 
     /// Generates a frame directly.
@@ -467,11 +481,13 @@ impl API {
         node: *mut ffi::VSNodeRef,
         err_msg: &mut [c_char],
     ) -> *const ffi::VSFrameRef {
-        let len = err_msg.len();
-        assert!(len <= i32::MAX as usize);
-        let len = len as i32;
+        unsafe {
+            let len = err_msg.len();
+            assert!(len <= i32::MAX as usize);
+            let len = len as i32;
 
-        (self.handle.as_ref().getFrame)(n, node, err_msg.as_mut_ptr(), len)
+            (self.handle.as_ref().getFrame)(n, node, err_msg.as_mut_ptr(), len)
+        }
     }
 
     /// Generates a frame directly.
@@ -486,7 +502,9 @@ impl API {
         callback: ffi::VSFrameDoneCallback,
         user_data: *mut c_void,
     ) {
-        (self.handle.as_ref().getFrameAsync)(n, node, callback, user_data);
+        unsafe {
+            (self.handle.as_ref().getFrameAsync)(n, node, callback, user_data);
+        }
     }
 
     /// Frees `frame`.
@@ -495,7 +513,9 @@ impl API {
     /// The caller must ensure `frame` is valid.
     #[inline]
     pub(crate) unsafe fn free_frame(self, frame: &ffi::VSFrameRef) {
-        (self.handle.as_ref().freeFrame)(frame);
+        unsafe {
+            (self.handle.as_ref().freeFrame)(frame);
+        }
     }
 
     /// Clones `frame`.
@@ -504,7 +524,7 @@ impl API {
     /// The caller must ensure `frame` is valid.
     #[inline]
     pub(crate) unsafe fn clone_frame(self, frame: &ffi::VSFrameRef) -> *const ffi::VSFrameRef {
-        (self.handle.as_ref().cloneFrameRef)(frame)
+        unsafe { (self.handle.as_ref().cloneFrameRef)(frame) }
     }
 
     /// Retrieves the format of a frame.
@@ -513,7 +533,7 @@ impl API {
     /// The caller must ensure `frame` is valid.
     #[inline]
     pub(crate) unsafe fn get_frame_format(self, frame: &ffi::VSFrameRef) -> *const ffi::VSFormat {
-        (self.handle.as_ref().getFrameFormat)(frame)
+        unsafe { (self.handle.as_ref().getFrameFormat)(frame) }
     }
 
     /// Returns the width of a plane of a given frame, in pixels.
@@ -522,7 +542,7 @@ impl API {
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
     pub(crate) unsafe fn get_frame_width(self, frame: &ffi::VSFrameRef, plane: i32) -> i32 {
-        (self.handle.as_ref().getFrameWidth)(frame, plane)
+        unsafe { (self.handle.as_ref().getFrameWidth)(frame, plane) }
     }
 
     /// Returns the height of a plane of a given frame, in pixels.
@@ -531,7 +551,7 @@ impl API {
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
     pub(crate) unsafe fn get_frame_height(self, frame: &ffi::VSFrameRef, plane: i32) -> i32 {
-        (self.handle.as_ref().getFrameHeight)(frame, plane)
+        unsafe { (self.handle.as_ref().getFrameHeight)(frame, plane) }
     }
 
     /// Returns the distance in bytes between two consecutive lines of a plane of a frame.
@@ -540,7 +560,7 @@ impl API {
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
     pub(crate) unsafe fn get_frame_stride(self, frame: &ffi::VSFrameRef, plane: i32) -> i32 {
-        (self.handle.as_ref().getStride)(frame, plane)
+        unsafe { (self.handle.as_ref().getStride)(frame, plane) }
     }
 
     /// Returns a read-only pointer to a plane of a frame.
@@ -553,7 +573,7 @@ impl API {
         frame: &ffi::VSFrameRef,
         plane: i32,
     ) -> *const u8 {
-        (self.handle.as_ref().getReadPtr)(frame, plane)
+        unsafe { (self.handle.as_ref().getReadPtr)(frame, plane) }
     }
 
     /// Returns a read-write pointer to a plane of a frame.
@@ -566,7 +586,7 @@ impl API {
         frame: &mut ffi::VSFrameRef,
         plane: i32,
     ) -> *mut u8 {
-        (self.handle.as_ref().getWritePtr)(frame, plane)
+        unsafe { (self.handle.as_ref().getWritePtr)(frame, plane) }
     }
 
     /// Returns a read-only pointer to a frame's properties.
@@ -576,7 +596,7 @@ impl API {
     /// returned map (it can't outlive `frame`).
     #[inline]
     pub(crate) unsafe fn get_frame_props_ro(self, frame: &ffi::VSFrameRef) -> *const ffi::VSMap {
-        (self.handle.as_ref().getFramePropsRO)(frame)
+        unsafe { (self.handle.as_ref().getFramePropsRO)(frame) }
     }
 
     /// Returns a read-write pointer to a frame's properties.
@@ -586,7 +606,7 @@ impl API {
     /// returned map (it can't outlive `frame`).
     #[inline]
     pub(crate) unsafe fn get_frame_props_rw(self, frame: &mut ffi::VSFrameRef) -> *mut ffi::VSMap {
-        (self.handle.as_ref().getFramePropsRW)(frame)
+        unsafe { (self.handle.as_ref().getFramePropsRW)(frame) }
     }
 
     /// Creates a new `VSMap`.
@@ -601,7 +621,9 @@ impl API {
     /// The caller must ensure `map` is valid.
     #[inline]
     pub(crate) unsafe fn clear_map(self, map: &mut ffi::VSMap) {
-        (self.handle.as_ref().clearMap)(map);
+        unsafe {
+            (self.handle.as_ref().clearMap)(map);
+        }
     }
 
     /// Frees `map`.
@@ -610,7 +632,9 @@ impl API {
     /// The caller must ensure `map` is valid.
     #[inline]
     pub(crate) unsafe fn free_map(self, map: &mut ffi::VSMap) {
-        (self.handle.as_ref().freeMap)(map);
+        unsafe {
+            (self.handle.as_ref().freeMap)(map);
+        }
     }
 
     /// Returns a pointer to the error message contained in the map, or NULL if there is no error
@@ -620,7 +644,7 @@ impl API {
     /// The caller must ensure `map` is valid.
     #[inline]
     pub(crate) unsafe fn get_error(self, map: &ffi::VSMap) -> *const c_char {
-        (self.handle.as_ref().getError)(map)
+        unsafe { (self.handle.as_ref().getError)(map) }
     }
 
     /// Adds an error message to a map. The map is cleared first. The error message is copied.
@@ -629,7 +653,7 @@ impl API {
     /// The caller must ensure `map` and `errorMessage` are valid.
     #[inline]
     pub(crate) unsafe fn set_error(self, map: &mut ffi::VSMap, error_message: *const c_char) {
-        (self.handle.as_ref().setError)(map, error_message)
+        unsafe { (self.handle.as_ref().setError)(map, error_message) }
     }
 
     /// Returns the number of keys contained in a map.
@@ -638,7 +662,7 @@ impl API {
     /// The caller must ensure `map` is valid.
     #[inline]
     pub(crate) unsafe fn prop_num_keys(self, map: &ffi::VSMap) -> i32 {
-        (self.handle.as_ref().propNumKeys)(map)
+        unsafe { (self.handle.as_ref().propNumKeys)(map) }
     }
 
     /// Returns a key from a property map.
@@ -647,7 +671,7 @@ impl API {
     /// The caller must ensure `map` is valid and `index` is valid for `map`.
     #[inline]
     pub(crate) unsafe fn prop_get_key(self, map: &ffi::VSMap, index: i32) -> *const c_char {
-        (self.handle.as_ref().propGetKey)(map, index)
+        unsafe { (self.handle.as_ref().propGetKey)(map, index) }
     }
 
     /// Removes the key from a property map.
@@ -656,7 +680,7 @@ impl API {
     /// The caller must ensure `map` and `key` are valid.
     #[inline]
     pub(crate) unsafe fn prop_delete_key(self, map: &mut ffi::VSMap, key: *const c_char) -> i32 {
-        (self.handle.as_ref().propDeleteKey)(map, key)
+        unsafe { (self.handle.as_ref().propDeleteKey)(map, key) }
     }
 
     /// Returns the number of elements associated with a key in a property map.
@@ -665,7 +689,7 @@ impl API {
     /// The caller must ensure `map` and `key` are valid.
     #[inline]
     pub(crate) unsafe fn prop_num_elements(self, map: &ffi::VSMap, key: *const c_char) -> i32 {
-        (self.handle.as_ref().propNumElements)(map, key)
+        unsafe { (self.handle.as_ref().propNumElements)(map, key) }
     }
 
     /// Returns the type of the elements associated with the given key in a property map.
@@ -674,7 +698,7 @@ impl API {
     /// The caller must ensure `map` and `key` are valid.
     #[inline]
     pub(crate) unsafe fn prop_get_type(self, map: &ffi::VSMap, key: *const c_char) -> c_char {
-        (self.handle.as_ref().propGetType)(map, key)
+        unsafe { (self.handle.as_ref().propGetType)(map, key) }
     }
 
     /// Returns the size in bytes of a property of type ptData.
@@ -689,7 +713,7 @@ impl API {
         index: i32,
         error: &mut i32,
     ) -> i32 {
-        (self.handle.as_ref().propGetDataSize)(map, key, index, error)
+        unsafe { (self.handle.as_ref().propGetDataSize)(map, key, index, error) }
     }
 
     prop_get_something!(prop_get_int, propGetInt, i64);
@@ -717,7 +741,7 @@ impl API {
         key: *const c_char,
         error: &mut i32,
     ) -> *const i64 {
-        (self.handle.as_ref().propGetIntArray)(map, key, error)
+        unsafe { (self.handle.as_ref().propGetIntArray)(map, key, error) }
     }
 
     /// Retrieves an array of floating point numbers from a map.
@@ -732,7 +756,7 @@ impl API {
         key: *const c_char,
         error: &mut i32,
     ) -> *const f64 {
-        (self.handle.as_ref().propGetFloatArray)(map, key, error)
+        unsafe { (self.handle.as_ref().propGetFloatArray)(map, key, error) }
     }
 
     /// Adds a data property to the map.
@@ -750,11 +774,13 @@ impl API {
         value: &[u8],
         append: ffi::VSPropAppendMode,
     ) -> i32 {
-        let length = value.len();
-        assert!(length <= i32::MAX as usize);
-        let length = length as i32;
+        unsafe {
+            let length = value.len();
+            assert!(length <= i32::MAX as usize);
+            let length = length as i32;
 
-        (self.handle.as_ref().propSetData)(map, key, value.as_ptr() as _, length, append as i32)
+            (self.handle.as_ref().propSetData)(map, key, value.as_ptr() as _, length, append as i32)
+        }
     }
 
     /// Adds an array of integers to the map.
@@ -772,11 +798,13 @@ impl API {
         key: *const c_char,
         value: &[i64],
     ) -> i32 {
-        let length = value.len();
-        assert!(length <= i32::MAX as usize);
-        let length = length as i32;
+        unsafe {
+            let length = value.len();
+            assert!(length <= i32::MAX as usize);
+            let length = length as i32;
 
-        (self.handle.as_ref().propSetIntArray)(map, key, value.as_ptr(), length)
+            (self.handle.as_ref().propSetIntArray)(map, key, value.as_ptr(), length)
+        }
     }
 
     /// Adds an array of floating point numbers to the map.
@@ -794,11 +822,13 @@ impl API {
         key: *const c_char,
         value: &[f64],
     ) -> i32 {
-        let length = value.len();
-        assert!(length <= i32::MAX as usize);
-        let length = length as i32;
+        unsafe {
+            let length = value.len();
+            assert!(length <= i32::MAX as usize);
+            let length = length as i32;
 
-        (self.handle.as_ref().propSetFloatArray)(map, key, value.as_ptr(), length)
+            (self.handle.as_ref().propSetFloatArray)(map, key, value.as_ptr(), length)
+        }
     }
 
     /// Frees `function`.
@@ -807,7 +837,9 @@ impl API {
     /// The caller must ensure `function` is valid.
     #[inline]
     pub(crate) unsafe fn free_func(self, function: *mut ffi::VSFuncRef) {
-        (self.handle.as_ref().freeFunc)(function);
+        unsafe {
+            (self.handle.as_ref().freeFunc)(function);
+        }
     }
 
     /// Clones `function`.
@@ -816,7 +848,7 @@ impl API {
     /// The caller must ensure `function` is valid.
     #[inline]
     pub(crate) unsafe fn clone_func(self, function: *mut ffi::VSFuncRef) -> *mut ffi::VSFuncRef {
-        (self.handle.as_ref().cloneFuncRef)(function)
+        unsafe { (self.handle.as_ref().cloneFuncRef)(function) }
     }
 
     /// Returns information about the VapourSynth core.
@@ -826,7 +858,7 @@ impl API {
     #[inline]
     #[cfg(not(feature = "gte-vapoursynth-api-36"))]
     pub(crate) unsafe fn get_core_info(self, core: *mut ffi::VSCore) -> *const ffi::VSCoreInfo {
-        (self.handle.as_ref().getCoreInfo)(core)
+        unsafe { (self.handle.as_ref().getCoreInfo)(core) }
     }
 
     /// Returns information about the VapourSynth core.
@@ -836,11 +868,13 @@ impl API {
     #[inline]
     #[cfg(feature = "gte-vapoursynth-api-36")]
     pub(crate) unsafe fn get_core_info(self, core: *mut ffi::VSCore) -> ffi::VSCoreInfo {
-        use std::mem::MaybeUninit;
+        unsafe {
+            use std::mem::MaybeUninit;
 
-        let mut core_info = MaybeUninit::uninit();
-        (self.handle.as_ref().getCoreInfo2)(core, core_info.as_mut_ptr());
-        core_info.assume_init()
+            let mut core_info = MaybeUninit::uninit();
+            (self.handle.as_ref().getCoreInfo2)(core, core_info.as_mut_ptr());
+            core_info.assume_init()
+        }
     }
 
     /// Returns a VSFormat structure from a video format identifier.
@@ -853,7 +887,7 @@ impl API {
         id: i32,
         core: *mut ffi::VSCore,
     ) -> *const ffi::VSFormat {
-        (self.handle.as_ref().getFormatPreset)(id, core)
+        unsafe { (self.handle.as_ref().getFormatPreset)(id, core) }
     }
 
     /// Registers a custom video format.
@@ -870,14 +904,16 @@ impl API {
         sub_sampling_h: i32,
         core: *mut ffi::VSCore,
     ) -> *const ffi::VSFormat {
-        (self.handle.as_ref().registerFormat)(
-            color_family as i32,
-            sample_type as i32,
-            bits_per_sample,
-            sub_sampling_w,
-            sub_sampling_h,
-            core,
-        )
+        unsafe {
+            (self.handle.as_ref().registerFormat)(
+                color_family as i32,
+                sample_type as i32,
+                bits_per_sample,
+                sub_sampling_w,
+                sub_sampling_h,
+                core,
+            )
+        }
     }
 
     /// Creates a new filter node.
@@ -899,18 +935,20 @@ impl API {
         instance_data: *mut c_void,
         core: *mut ffi::VSCore,
     ) {
-        (self.handle.as_ref().createFilter)(
-            in_,
-            out,
-            name,
-            init,
-            get_frame,
-            free,
-            filter_mode as _,
-            flags.0,
-            instance_data,
-            core,
-        );
+        unsafe {
+            (self.handle.as_ref().createFilter)(
+                in_,
+                out,
+                name,
+                init,
+                get_frame,
+                free,
+                filter_mode as _,
+                flags.0,
+                instance_data,
+                core,
+            );
+        }
     }
 
     /// Sets node's video info.
@@ -922,11 +960,13 @@ impl API {
     /// Panics if `vi.len()` can't fit in an `i32`.
     #[inline]
     pub(crate) unsafe fn set_video_info(self, vi: &[ffi::VSVideoInfo], node: *mut ffi::VSNode) {
-        let length = vi.len();
-        assert!(length <= i32::MAX as usize);
-        let length = length as i32;
+        unsafe {
+            let length = vi.len();
+            assert!(length <= i32::MAX as usize);
+            let length = length as i32;
 
-        (self.handle.as_ref().setVideoInfo)(vi.as_ptr(), length, node);
+            (self.handle.as_ref().setVideoInfo)(vi.as_ptr(), length, node);
+        }
     }
 
     /// Adds an error message to a frame context, replacing the existing message, if any.
@@ -942,7 +982,9 @@ impl API {
         message: *const c_char,
         frame_ctx: *mut ffi::VSFrameContext,
     ) {
-        (self.handle.as_ref().setFilterError)(message, frame_ctx);
+        unsafe {
+            (self.handle.as_ref().setFilterError)(message, frame_ctx);
+        }
     }
 
     /// Requests a frame from a node and returns immediately.
@@ -959,7 +1001,9 @@ impl API {
         node: *mut ffi::VSNodeRef,
         frame_ctx: *mut ffi::VSFrameContext,
     ) {
-        (self.handle.as_ref().requestFrameFilter)(n, node, frame_ctx);
+        unsafe {
+            (self.handle.as_ref().requestFrameFilter)(n, node, frame_ctx);
+        }
     }
 
     /// Retrieves a frame that was previously requested with `request_frame_filter()`.
@@ -976,7 +1020,7 @@ impl API {
         node: *mut ffi::VSNodeRef,
         frame_ctx: *mut ffi::VSFrameContext,
     ) -> *const ffi::VSFrameRef {
-        (self.handle.as_ref().getFrameFilter)(n, node, frame_ctx)
+        unsafe { (self.handle.as_ref().getFrameFilter)(n, node, frame_ctx) }
     }
 
     /// Duplicates the frame (not just the reference). As the frame buffer is shared in a
@@ -991,7 +1035,7 @@ impl API {
         f: &ffi::VSFrameRef,
         core: *mut ffi::VSCore,
     ) -> *mut ffi::VSFrameRef {
-        (self.handle.as_ref().copyFrame)(f, core)
+        unsafe { (self.handle.as_ref().copyFrame)(f, core) }
     }
 
     /// Creates a new frame, optionally copying the properties attached to another frame. The new
@@ -1009,7 +1053,7 @@ impl API {
         prop_src: *const ffi::VSFrameRef,
         core: *mut ffi::VSCore,
     ) -> *mut ffi::VSFrameRef {
-        (self.handle.as_ref().newVideoFrame)(format, width, height, prop_src, core)
+        unsafe { (self.handle.as_ref().newVideoFrame)(format, width, height, prop_src, core) }
     }
 
     /// Returns a pointer to the plugin with the given identifier, or a null pointer if not found.
@@ -1022,7 +1066,7 @@ impl API {
         identifier: *const c_char,
         core: *mut ffi::VSCore,
     ) -> *mut ffi::VSPlugin {
-        (self.handle.as_ref().getPluginById)(identifier, core)
+        unsafe { (self.handle.as_ref().getPluginById)(identifier, core) }
     }
 
     /// Returns a pointer to the plugin with the given namespace, or a null pointer if not found.
@@ -1035,7 +1079,7 @@ impl API {
         namespace: *const c_char,
         core: *mut ffi::VSCore,
     ) -> *mut ffi::VSPlugin {
-        (self.handle.as_ref().getPluginByNs)(namespace, core)
+        unsafe { (self.handle.as_ref().getPluginByNs)(namespace, core) }
     }
 
     /// Returns a map containing a list of all loaded plugins.
@@ -1044,7 +1088,7 @@ impl API {
     /// The caller must ensure all pointers are valid.
     #[inline]
     pub(crate) unsafe fn get_plugins(self, core: *mut ffi::VSCore) -> *mut ffi::VSMap {
-        (self.handle.as_ref().getPlugins)(core)
+        unsafe { (self.handle.as_ref().getPlugins)(core) }
     }
 
     /// Returns a map containing a list of the filters exported by a plugin.
@@ -1053,7 +1097,7 @@ impl API {
     /// The caller must ensure all pointers are valid.
     #[inline]
     pub(crate) unsafe fn get_functions(self, plugin: *mut ffi::VSPlugin) -> *mut ffi::VSMap {
-        (self.handle.as_ref().getFunctions)(plugin)
+        unsafe { (self.handle.as_ref().getFunctions)(plugin) }
     }
 
     /// Returns the absolute path to the plugin, including the plugin's file name. This is the real
@@ -1070,7 +1114,7 @@ impl API {
     #[cfg(feature = "gte-vapoursynth-api-31")]
     #[inline]
     pub(crate) unsafe fn get_plugin_path(self, plugin: *mut ffi::VSPlugin) -> *const c_char {
-        (self.handle.as_ref().getPluginPath)(plugin)
+        unsafe { (self.handle.as_ref().getPluginPath)(plugin) }
     }
 
     /// Invokes a filter.
@@ -1084,7 +1128,7 @@ impl API {
         name: *const c_char,
         args: *const ffi::VSMap,
     ) -> *mut ffi::VSMap {
-        (self.handle.as_ref().invoke)(plugin, name, args)
+        unsafe { (self.handle.as_ref().invoke)(plugin, name, args) }
     }
 
     /// Returns the index of the node from which the frame is being requested.
@@ -1093,7 +1137,7 @@ impl API {
     /// The caller must ensure all pointers are valid.
     #[inline]
     pub(crate) unsafe fn get_output_index(self, frame_ctx: *mut ffi::VSFrameContext) -> i32 {
-        (self.handle.as_ref().getOutputIndex)(frame_ctx)
+        unsafe { (self.handle.as_ref().getOutputIndex)(frame_ctx) }
     }
 
     /// Creates a user-defined function.
@@ -1108,7 +1152,9 @@ impl API {
         free: ffi::VSFreeFuncData,
         core: *mut ffi::VSCore,
     ) -> *mut ffi::VSFuncRef {
-        (self.handle.as_ref().createFunc)(func, user_data, free, core, self.handle.as_ptr())
+        unsafe {
+            (self.handle.as_ref().createFunc)(func, user_data, free, core, self.handle.as_ptr())
+        }
     }
 
     /// Calls a function. If the call fails out will have an error set.
@@ -1122,7 +1168,9 @@ impl API {
         in_: *const ffi::VSMap,
         out: *mut ffi::VSMap,
     ) {
-        (self.handle.as_ref().callFunc)(func, in_, out, ptr::null_mut(), ptr::null());
+        unsafe {
+            (self.handle.as_ref().callFunc)(func, in_, out, ptr::null_mut(), ptr::null());
+        }
     }
 
     /// Registers a filter exported by the plugin. A plugin can export any number of filters.
@@ -1138,7 +1186,9 @@ impl API {
         function_data: *mut c_void,
         plugin: *mut ffi::VSPlugin,
     ) {
-        (self.handle.as_ref().registerFunction)(name, args, args_func, function_data, plugin);
+        unsafe {
+            (self.handle.as_ref().registerFunction)(name, args, args_func, function_data, plugin);
+        }
     }
 
     /// Sets the maximum size of the framebuffer cache. Returns the new maximum size.
@@ -1148,7 +1198,7 @@ impl API {
     /// must ensure there are no concurrent accesses to the core info.
     #[inline]
     pub(crate) unsafe fn set_max_cache_size(self, bytes: i64, core: *mut ffi::VSCore) -> i64 {
-        (self.handle.as_ref().setMaxCacheSize)(bytes, core)
+        unsafe { (self.handle.as_ref().setMaxCacheSize)(bytes, core) }
     }
 
     /// Sets the number of worker threads for the given core.
@@ -1163,7 +1213,7 @@ impl API {
     /// must ensure there are no concurrent accesses to the core info.
     #[inline]
     pub(crate) unsafe fn set_thread_count(self, threads: c_int, core: *mut ffi::VSCore) -> c_int {
-        (self.handle.as_ref().setThreadCount)(threads, core)
+        unsafe { (self.handle.as_ref().setThreadCount)(threads, core) }
     }
 
     /// Creates and returns a new core.

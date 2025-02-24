@@ -192,7 +192,7 @@ pub mod prelude {
     //! The VapourSynth prelude.
     //!
     //! Contains the types you most likely want to import anyway.
-    pub use super::api::{MessageType, API};
+    pub use super::api::{API, MessageType};
     pub use super::component::Component;
     pub use super::format::{ColorFamily, PresetFormat, SampleType};
     pub use super::frame::{Frame, FrameRef, FrameRefMut};
