@@ -17,8 +17,8 @@ pub struct Plugin<'core> {
     _owner: PhantomData<&'core ()>,
 }
 
-unsafe impl<'core> Send for Plugin<'core> {}
-unsafe impl<'core> Sync for Plugin<'core> {}
+unsafe impl Send for Plugin<'_> {}
+unsafe impl Sync for Plugin<'_> {}
 
 impl<'core> Plugin<'core> {
     /// Wraps `handle` in a `Plugin`.

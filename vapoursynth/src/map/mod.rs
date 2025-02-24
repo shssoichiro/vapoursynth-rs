@@ -57,11 +57,11 @@ pub struct OwnedMap<'elem> {
     map: Map<'elem>,
 }
 
-unsafe impl<'elem> Send for Map<'elem> {}
-unsafe impl<'elem> Sync for Map<'elem> {}
+unsafe impl Send for Map<'_> {}
+unsafe impl Sync for Map<'_> {}
 
 #[doc(hidden)]
-impl<'elem> Deref for Map<'elem> {
+impl Deref for Map<'_> {
     type Target = ffi::VSMap;
 
     #[inline]
@@ -71,14 +71,14 @@ impl<'elem> Deref for Map<'elem> {
 }
 
 #[doc(hidden)]
-impl<'elem> DerefMut for Map<'elem> {
+impl DerefMut for Map<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.handle.as_mut() }
     }
 }
 
-impl<'owner, 'elem> Deref for MapRef<'owner, 'elem> {
+impl<'elem> Deref for MapRef<'_, 'elem> {
     type Target = Map<'elem>;
 
     // Technically this should return `&'owner`.
@@ -88,7 +88,7 @@ impl<'owner, 'elem> Deref for MapRef<'owner, 'elem> {
     }
 }
 
-impl<'owner, 'elem> Deref for MapRefMut<'owner, 'elem> {
+impl<'elem> Deref for MapRefMut<'_, 'elem> {
     type Target = Map<'elem>;
 
     // Technically this should return `&'owner`.
@@ -98,7 +98,7 @@ impl<'owner, 'elem> Deref for MapRefMut<'owner, 'elem> {
     }
 }
 
-impl<'owner, 'elem> DerefMut for MapRefMut<'owner, 'elem> {
+impl DerefMut for MapRefMut<'_, '_> {
     // Technically this should return `&'owner`.
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -106,7 +106,7 @@ impl<'owner, 'elem> DerefMut for MapRefMut<'owner, 'elem> {
     }
 }
 
-impl<'elem> Drop for OwnedMap<'elem> {
+impl Drop for OwnedMap<'_> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -124,14 +124,14 @@ impl<'elem> Deref for OwnedMap<'elem> {
     }
 }
 
-impl<'elem> DerefMut for OwnedMap<'elem> {
+impl DerefMut for OwnedMap<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.map
     }
 }
 
-impl<'elem> OwnedMap<'elem> {
+impl OwnedMap<'_> {
     /// Creates a new map.
     #[inline]
     pub fn new(api: API) -> Self {
@@ -153,7 +153,7 @@ impl<'elem> OwnedMap<'elem> {
     }
 }
 
-impl<'owner, 'elem> MapRef<'owner, 'elem> {
+impl MapRef<'_, '_> {
     /// Wraps pointer into `MapRef`.
     ///
     /// # Safety
@@ -168,7 +168,7 @@ impl<'owner, 'elem> MapRef<'owner, 'elem> {
     }
 }
 
-impl<'owner, 'elem> MapRefMut<'owner, 'elem> {
+impl MapRefMut<'_, '_> {
     /// Wraps pointer into `MapRefMut`.
     ///
     /// # Safety

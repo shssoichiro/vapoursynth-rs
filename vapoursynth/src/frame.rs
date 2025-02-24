@@ -45,11 +45,11 @@ pub struct FrameRefMut<'core> {
     frame: Frame<'core>,
 }
 
-unsafe impl<'core> Send for Frame<'core> {}
-unsafe impl<'core> Sync for Frame<'core> {}
+unsafe impl Send for Frame<'_> {}
+unsafe impl Sync for Frame<'_> {}
 
 #[doc(hidden)]
-impl<'core> Deref for Frame<'core> {
+impl Deref for Frame<'_> {
     type Target = ffi::VSFrameRef;
 
     // Technically this should return `&'core`.
@@ -60,7 +60,7 @@ impl<'core> Deref for Frame<'core> {
 }
 
 #[doc(hidden)]
-impl<'core> DerefMut for Frame<'core> {
+impl DerefMut for Frame<'_> {
     // Technically this should return `&'core`.
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -68,7 +68,7 @@ impl<'core> DerefMut for Frame<'core> {
     }
 }
 
-impl<'core> Drop for Frame<'core> {
+impl Drop for Frame<'_> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -77,7 +77,7 @@ impl<'core> Drop for Frame<'core> {
     }
 }
 
-impl<'core> Clone for FrameRef<'core> {
+impl Clone for FrameRef<'_> {
     #[inline]
     fn clone(&self) -> Self {
         unsafe {
@@ -107,14 +107,14 @@ impl<'core> Deref for FrameRefMut<'core> {
     }
 }
 
-impl<'core> DerefMut for FrameRefMut<'core> {
+impl DerefMut for FrameRefMut<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.frame
     }
 }
 
-impl<'core> FrameRef<'core> {
+impl FrameRef<'_> {
     /// Wraps `handle` in a `FrameRef`.
     ///
     /// # Safety

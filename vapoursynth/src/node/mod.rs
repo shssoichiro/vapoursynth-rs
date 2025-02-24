@@ -51,10 +51,10 @@ pub struct Node<'core> {
     _owner: PhantomData<&'core ()>,
 }
 
-unsafe impl<'core> Send for Node<'core> {}
-unsafe impl<'core> Sync for Node<'core> {}
+unsafe impl Send for Node<'_> {}
+unsafe impl Sync for Node<'_> {}
 
-impl<'core> Drop for Node<'core> {
+impl Drop for Node<'_> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -63,7 +63,7 @@ impl<'core> Drop for Node<'core> {
     }
 }
 
-impl<'core> Clone for Node<'core> {
+impl Clone for Node<'_> {
     #[inline]
     fn clone(&self) -> Self {
         let handle = unsafe { API::get_cached().clone_node(self.handle.as_ptr()) };

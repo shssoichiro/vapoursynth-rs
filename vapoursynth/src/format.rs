@@ -89,10 +89,10 @@ impl<'core> PartialEq for Format<'core> {
     }
 }
 
-impl<'core> Eq for Format<'core> {}
+impl Eq for Format<'_> {}
 
 #[doc(hidden)]
-impl<'core> Deref for Format<'core> {
+impl Deref for Format<'_> {
     type Target = ffi::VSFormat;
 
     // Technically this should return `&'core`.

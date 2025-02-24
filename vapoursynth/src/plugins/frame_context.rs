@@ -11,7 +11,7 @@ pub struct FrameContext<'a> {
     _owner: PhantomData<&'a ()>,
 }
 
-impl<'a> FrameContext<'a> {
+impl FrameContext<'_> {
     /// Wraps `handle` in a `FrameContext`.
     ///
     /// # Safety

@@ -63,7 +63,7 @@ pub struct VideoInfo<'core> {
     pub flags: node::Flags,
 }
 
-impl<'core> VideoInfo<'core> {
+impl VideoInfo<'_> {
     /// Creates a `VideoInfo` from a raw pointer.
     ///
     /// # Safety

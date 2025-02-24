@@ -21,7 +21,7 @@ impl<'map, 'elem> Keys<'map, 'elem> {
     }
 }
 
-impl<'map, 'elem> Iterator for Keys<'map, 'elem> {
+impl<'map> Iterator for Keys<'map, '_> {
     type Item = &'map str;
 
     #[inline]
@@ -42,7 +42,7 @@ impl<'map, 'elem> Iterator for Keys<'map, 'elem> {
     }
 }
 
-impl<'map, 'elem> ExactSizeIterator for Keys<'map, 'elem> {}
+impl ExactSizeIterator for Keys<'_, '_> {}
 
 /// An iterator over the values associated with a certain key of a map.
 #[derive(Debug, Clone)]

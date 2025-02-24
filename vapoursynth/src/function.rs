@@ -18,10 +18,10 @@ pub struct Function<'core> {
     _owner: PhantomData<&'core ()>,
 }
 
-unsafe impl<'core> Send for Function<'core> {}
-unsafe impl<'core> Sync for Function<'core> {}
+unsafe impl Send for Function<'_> {}
+unsafe impl Sync for Function<'_> {}
 
-impl<'core> Drop for Function<'core> {
+impl Drop for Function<'_> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -30,7 +30,7 @@ impl<'core> Drop for Function<'core> {
     }
 }
 
-impl<'core> Clone for Function<'core> {
+impl Clone for Function<'_> {
     #[inline]
     fn clone(&self) -> Self {
         let handle = unsafe { API::get_cached().clone_func(self.handle.as_ptr()) };

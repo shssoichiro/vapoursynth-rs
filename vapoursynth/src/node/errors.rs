@@ -7,14 +7,14 @@ use std::fmt;
 #[derive(Debug)]
 pub struct GetFrameError<'a>(Cow<'a, CStr>);
 
-impl<'a> fmt::Display for GetFrameError<'a> {
+impl fmt::Display for GetFrameError<'_> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0.to_string_lossy())
     }
 }
 
-impl<'a> Error for GetFrameError<'a> {
+impl Error for GetFrameError<'_> {
     #[inline]
     fn description(&self) -> &str {
         "VapourSynth error"
