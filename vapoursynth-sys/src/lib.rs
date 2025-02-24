@@ -17,7 +17,11 @@ macro_rules! api_version {
 }
 
 cfg_if! {
-    if #[cfg(feature="vapoursynth-api-36")] {
+    if #[cfg(feature="vapoursynth-api-41")] {
+        pub const VAPOURSYNTH_API_VERSION: i32 = api_version!(4, 1);
+    } else if #[cfg(feature="vapoursynth-api-40")] {
+        pub const VAPOURSYNTH_API_VERSION: i32 = api_version!(4, 0);
+    } else if #[cfg(feature="vapoursynth-api-36")] {
         pub const VAPOURSYNTH_API_VERSION: i32 = api_version!(3, 6);
     } else if #[cfg(feature="vapoursynth-api-35")] {
         pub const VAPOURSYNTH_API_VERSION: i32 = api_version!(3, 5);
@@ -35,7 +39,11 @@ cfg_if! {
 }
 
 cfg_if! {
-    if #[cfg(feature="vsscript-api-32")] {
+    if #[cfg(feature="vsscript-api-42")] {
+        pub const VSSCRIPT_API_VERSION: i32 = api_version!(4, 2);
+    } else if #[cfg(feature="vsscript-api-41")] {
+        pub const VSSCRIPT_API_VERSION: i32 = api_version!(4, 1);
+    } else if #[cfg(feature="vsscript-api-32")] {
         pub const VSSCRIPT_API_VERSION: i32 = api_version!(3, 2);
     } else if #[cfg(feature="vsscript-api-31")] {
         pub const VSSCRIPT_API_VERSION: i32 = api_version!(3, 1);
