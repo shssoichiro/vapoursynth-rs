@@ -783,7 +783,7 @@ mod apiv4 {
         mtAudio = 2,
     }
     #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub struct VSVideoFormat {
         pub colorFamily: c_int,
         pub sampleType: c_int,
@@ -1124,7 +1124,7 @@ mod apiv4 {
         pub getFramePropertiesRO: unsafe extern "system" fn(f: *const VSFrame) -> *const VSMap,
         pub getFramePropertiesRW: unsafe extern "system" fn(f: *mut VSFrame) -> *mut VSMap,
 
-        pub getStride: unsafe extern "system" fn(f: *const VSFrame, plane: c_int) -> usize,
+        pub getStride: unsafe extern "system" fn(f: *const VSFrame, plane: c_int) -> c_int,
         pub getReadPtr: unsafe extern "system" fn(f: *const VSFrame, plane: c_int) -> *const u8,
         /* calling this function invalidates previously gotten read pointers to the same frame */
         pub getWritePtr: unsafe extern "system" fn(f: *const VSFrame, plane: c_int) -> *mut u8,
@@ -1214,7 +1214,7 @@ mod apiv4 {
         ),
         /* used to signal errors in the filter getframe function */
         pub setFilterError:
-            unsafe extern "system" fn(errorMessage: *mut c_char, frameCtx: *mut VSFrameContext),
+            unsafe extern "system" fn(errorMessage: *const c_char, frameCtx: *mut VSFrameContext),
         /* External functions */
         pub createFunction: unsafe extern "system" fn(
             func: VSPublicFunction,
@@ -1362,19 +1362,19 @@ mod apiv4 {
             key: *const c_char,
             index: c_int,
             error: *mut c_int,
-        ) -> *mut VSFrame,
+        ) -> *const VSFrame,
         /* returns 0 on success */
         pub mapSetFrame: unsafe extern "system" fn(
             map: *mut VSMap,
             key: *const c_char,
-            f: *mut VSFrame,
+            f: *const VSFrame,
             append: c_int,
         ) -> c_int,
         /* always consumes the reference, even on error */
         pub mapConsumeFrame: unsafe extern "system" fn(
             map: *mut VSMap,
             key: *const c_char,
-            f: *mut VSFrame,
+            f: *const VSFrame,
             append: c_int,
         ) -> c_int,
 

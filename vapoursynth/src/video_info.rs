@@ -60,6 +60,7 @@ pub struct VideoInfo<'core> {
     pub num_frames: Property<usize>,
 
     /// The flags of this clip.
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub flags: node::Flags,
 }
 
@@ -78,11 +79,14 @@ impl VideoInfo<'_> {
             debug_assert!(info.height >= 0);
             debug_assert!(info.numFrames >= 0);
 
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
             let format = if info.format.is_null() {
                 Property::Variable
             } else {
                 Property::Constant(Format::from_ptr(info.format))
             };
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let format = Property::Constant(Format::from_raw(info.format));
 
             let framerate = if info.fpsNum == 0 {
                 debug_assert!(info.fpsDen == 0);
@@ -126,6 +130,7 @@ impl VideoInfo<'_> {
                 framerate,
                 resolution,
                 num_frames,
+                #[cfg(not(feature = "gte-vapoursynth-api-40"))]
                 flags: ffi::VSNodeFlags(info.flags).into(),
             }
         }
@@ -133,9 +138,15 @@ impl VideoInfo<'_> {
 
     /// Converts the Rust struct into a C struct.
     pub(crate) fn ffi_type(self) -> ffi::VSVideoInfo {
+        #[cfg(not(feature = "gte-vapoursynth-api-40"))]
         let format = match self.format {
             Property::Variable => ptr::null(),
             Property::Constant(x) => x.deref(),
+        };
+        #[cfg(feature = "gte-vapoursynth-api-40")]
+        let format = match self.format {
+            Property::Variable => unreachable!(),
+            Property::Constant(x) => *x,
         };
 
         let (fps_num, fps_den) = match self.framerate {
@@ -160,6 +171,7 @@ impl VideoInfo<'_> {
             Property::Constant(x) => x as i32,
         };
 
+        #[cfg(not(feature = "gte-vapoursynth-api-40"))]
         let flags = self.flags.bits();
 
         ffi::VSVideoInfo {
@@ -169,6 +181,7 @@ impl VideoInfo<'_> {
             width,
             height,
             numFrames: num_frames,
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
             flags,
         }
     }

@@ -90,6 +90,7 @@ unsafe extern "system" fn free(
 }
 
 /// Calls `Filter::get_frame_initial()` and `Filter::get_frame()`.
+#[cfg(not(feature = "gte-vapoursynth-api-40"))]
 unsafe extern "system" fn get_frame(
     n: i32,
     activation_reason: i32,
@@ -99,6 +100,87 @@ unsafe extern "system" fn get_frame(
     core: *mut ffi::VSCore,
     _vsapi: *const ffi::VSAPI,
 ) -> *const ffi::VSFrameRef {
+    unsafe {
+        let closure = move || {
+            let api = API::get_cached();
+            let core = CoreRef::from_ptr(core);
+            let context = FrameContext::from_ptr(frame_ctx);
+
+            // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
+            // retrieving it.
+            let filter =
+                Box::from_raw(*(instance_data as *mut *mut Box<dyn Filter<'static> + 'static>));
+
+            debug_assert!(n >= 0);
+            let n = n as usize;
+
+            let rv = match activation_reason {
+                x if x == ffi::VSActivationReason::arInitial as _ => {
+                    match filter.get_frame_initial(api, core, context, n) {
+                        Ok(Some(frame)) => {
+                            let ptr = frame.deref().deref() as *const _;
+                            // The ownership is transferred to the caller.
+                            mem::forget(frame);
+                            ptr
+                        }
+                        Ok(None) => ptr::null(),
+                        Err(err) => {
+                            let mut buf = String::with_capacity(64);
+
+                            write!(buf, "Error in Filter::get_frame_initial(): {}", err);
+
+                            write!(buf, "{}", err);
+
+                            let buf = CString::new(buf.replace('\0', "\\0")).unwrap();
+                            api.set_filter_error(buf.as_ptr(), frame_ctx);
+
+                            ptr::null()
+                        }
+                    }
+                }
+                x if x == ffi::VSActivationReason::arAllFramesReady as _ => {
+                    match filter.get_frame(api, core, context, n) {
+                        Ok(frame) => {
+                            let ptr = frame.deref().deref() as *const _;
+                            // The ownership is transferred to the caller.
+                            mem::forget(frame);
+                            ptr
+                        }
+                        Err(err) => {
+                            let buf = format!("{}", err);
+                            let buf = CString::new(buf.replace('\0', "\\0")).unwrap();
+                            api.set_filter_error(buf.as_ptr(), frame_ctx);
+
+                            ptr::null()
+                        }
+                    }
+                }
+                _ => ptr::null(),
+            };
+
+            mem::forget(filter);
+
+            rv
+        };
+
+        match panic::catch_unwind(closure) {
+            Ok(frame) => frame,
+            Err(_) => process::abort(),
+        }
+    }
+}
+
+/// Calls `Filter::get_frame_initial()` and `Filter::get_frame()`.
+#[cfg(feature = "gte-vapoursynth-api-40")]
+unsafe extern "system" fn get_frame(
+    n: i32,
+    activation_reason: i32,
+    instance_data: *mut *mut c_void,
+    _frame_data: *mut *mut c_void,
+    frame_ctx: *mut ffi::VSFrameContext,
+    core: *mut ffi::VSCore,
+    _vsapi: *const ffi::VSAPI,
+) -> *const ffi::VSFrame {
     unsafe {
         let closure = move || {
             let api = API::get_cached();
@@ -206,6 +288,7 @@ pub(crate) unsafe extern "system" fn create<F: FilterFunction>(
                 }
             };
 
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
             if let Some(filter) = filter {
                 API::get_cached().create_filter(
                     in_,
@@ -216,6 +299,20 @@ pub(crate) unsafe extern "system" fn create<F: FilterFunction>(
                     Some(free),
                     ffi::VSFilterMode::fmParallel,
                     ffi::VSNodeFlags(0),
+                    Box::into_raw(filter) as *mut _,
+                    core.ptr(),
+                );
+            }
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            if let Some(filter) = filter {
+                API::get_cached().create_filter(
+                    in_,
+                    out.deref_mut().deref_mut(),
+                    data.name.as_ptr(),
+                    todo!(),
+                    todo!(),
+                    Some(free),
+                    ffi::VSFilterMode::fmParallel,
                     Box::into_raw(filter) as *mut _,
                     core.ptr(),
                 );
@@ -238,6 +335,7 @@ pub(crate) unsafe extern "system" fn create<F: FilterFunction>(
 /// # Safety
 /// The caller must ensure the pointers are valid.
 #[inline]
+#[cfg(not(feature = "gte-vapoursynth-api-40"))]
 pub unsafe fn call_config_func(
     config_func: *const c_void,
     plugin: *mut c_void,
@@ -264,6 +362,22 @@ pub unsafe fn call_config_func(
     }
 }
 
+/// Registers the plugin.
+///
+/// This function is for internal use only.
+///
+/// # Safety
+/// The caller must ensure the pointers are valid.
+#[inline]
+#[cfg(feature = "gte-vapoursynth-api-40")]
+pub unsafe fn call_config_func(
+    config_func: *const c_void,
+    plugin: *mut c_void,
+    metadata: Metadata,
+) {
+    todo!()
+}
+
 /// Registers the filter `F`.
 ///
 /// This function is for internal use only.
@@ -271,6 +385,7 @@ pub unsafe fn call_config_func(
 /// # Safety
 /// The caller must ensure the pointers are valid.
 #[inline]
+#[cfg(not(feature = "gte-vapoursynth-api-40"))]
 pub unsafe fn call_register_func<F: FilterFunction>(
     register_func: *const c_void,
     plugin: *mut c_void,
@@ -297,6 +412,22 @@ pub unsafe fn call_register_func<F: FilterFunction>(
             plugin as *mut ffi::VSPlugin,
         );
     }
+}
+
+/// Registers the filter `F`.
+///
+/// This function is for internal use only.
+///
+/// # Safety
+/// The caller must ensure the pointers are valid.
+#[inline]
+#[cfg(feature = "gte-vapoursynth-api-40")]
+pub unsafe fn call_register_func<F: FilterFunction>(
+    register_func: *const c_void,
+    plugin: *mut c_void,
+    filter_function: F,
+) {
+    todo!()
 }
 
 /// Exports a VapourSynth plugin from this library.

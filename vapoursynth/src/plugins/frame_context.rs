@@ -34,9 +34,17 @@ impl FrameContext<'_> {
 
     /// Returns the index of the node from which the frame is being requested.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub fn output_index(self) -> usize {
         let index = unsafe { API::get_cached().get_output_index(self.handle.as_ptr()) };
         debug_assert!(index >= 0);
         index as _
+    }
+
+    /// Returns the index of the node from which the frame is being requested.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub fn output_index(self) -> usize {
+        todo!()
     }
 }

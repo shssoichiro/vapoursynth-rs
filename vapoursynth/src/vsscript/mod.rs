@@ -34,16 +34,44 @@ pub(crate) fn maybe_initialize() {
     static ONCE: Once = Once::new();
 
     ONCE.call_once(|| unsafe {
+        #[cfg(not(feature = "gte-vsscript-api-41"))]
         ffi::vsscript_init();
 
         // Verify the VSScript API version.
-        #[cfg(feature = "gte-vsscript-api-31")]
+        #[cfg(all(feature = "gte-vsscript-api-31", not(feature = "gte-vsscript-api-41")))]
         {
             fn split_version(version: i32) -> (i32, i32) {
                 (version >> 16, version & 0xFFFF)
             }
 
             let vsscript_version = ffi::vsscript_getApiVersion();
+            let (major, minor) = split_version(vsscript_version);
+            let (my_major, my_minor) = split_version(ffi::VSSCRIPT_API_VERSION);
+
+            if my_major != major {
+                panic!(
+                    "Invalid VSScript major API version (expected: {}, got: {})",
+                    my_major, major
+                );
+            } else if my_minor > minor {
+                panic!(
+                    "Invalid VSScript minor API version (expected: >= {}, got: {})",
+                    my_minor, minor
+                );
+            }
+        }
+
+        // Verify the VSScript API version.
+        #[cfg(feature = "gte-vsscript-api-41")]
+        {
+            fn split_version(version: i32) -> (i32, i32) {
+                (version >> 16, version & 0xFFFF)
+            }
+
+            let vsscript_version = (ffi::getVSScriptAPI(ffi::VSSCRIPT_API_VERSION)
+                .as_ref()
+                .expect("VSScript API not available")
+                .getAPIVersion)();
             let (major, minor) = split_version(vsscript_version);
             let (my_major, my_minor) = split_version(ffi::VSSCRIPT_API_VERSION);
 
@@ -66,4 +94,7 @@ mod errors;
 pub use self::errors::{Error, VSScriptError};
 
 mod environment;
-pub use self::environment::{Environment, EvalFlags};
+pub use self::environment::Environment;
+
+#[cfg(not(feature = "gte-vapoursynth-api-40"))]
+pub use self::environment::EvalFlags;

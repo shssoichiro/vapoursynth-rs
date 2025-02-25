@@ -14,6 +14,9 @@ use crate::core::CoreRef;
 pub struct API {
     // Note that this is *const, not *mut.
     handle: NonNull<ffi::VSAPI>,
+    #[cfg(all(feature = "vsscript-functions", feature = "gte-vapoursynth-api-40"))]
+    // Note that this is *const, not *mut.
+    vsscript_handle: NonNull<ffi::VSSCRIPTAPI>,
 }
 
 unsafe impl Send for API {}
@@ -21,6 +24,10 @@ unsafe impl Sync for API {}
 
 /// A cached API pointer. Note that this is `*const ffi::VSAPI`, not `*mut`.
 static RAW_API: AtomicPtr<ffi::VSAPI> = AtomicPtr::new(ptr::null_mut());
+
+#[cfg(all(feature = "vsscript-functions", feature = "gte-vapoursynth-api-40"))]
+/// A cached API pointer. Note that this is `*const ffi::VSAPI`, not `*mut`.
+static RAW_VSS_API: AtomicPtr<ffi::VSSCRIPTAPI> = AtomicPtr::new(ptr::null_mut());
 
 /// VapourSynth log message types.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -49,6 +56,7 @@ macro_rules! prop_get_something {
     };
 }
 
+#[cfg(not(feature = "gte-vapoursynth-api-40"))]
 macro_rules! prop_set_something {
     ($name:ident, $func:ident, $type:ty) => {
         #[inline]
@@ -64,6 +72,22 @@ macro_rules! prop_set_something {
     };
 }
 
+#[cfg(feature = "gte-vapoursynth-api-40")]
+macro_rules! prop_set_something {
+    ($name:ident, $func:ident, $type:ty) => {
+        #[inline]
+        pub(crate) unsafe fn $name(
+            self,
+            map: &mut ffi::VSMap,
+            key: *const c_char,
+            value: $type,
+            append: ffi::VSMapAppendMode,
+        ) -> i32 {
+            unsafe { (self.handle.as_ref().$func)(map, key, value, append as i32) }
+        }
+    };
+}
+
 /// ID of a unique, registered VapourSynth message handler.
 ///
 /// This ID is returned from [`add_message_handler`] and [`add_message_handler_trivial`] and can be
@@ -72,7 +96,10 @@ macro_rules! prop_set_something {
 /// [`add_message_handler`]: struct.API.html#method.add_message_handler
 /// [`add_message_handler_trivial`]: struct.API.html#method.add_message_handler_trivial
 /// [`remove_message_handler`]: struct.API.html#method.remove_message_handler
-#[cfg(feature = "gte-vapoursynth-api-36")]
+#[cfg(all(
+    feature = "gte-vapoursynth-api-36",
+    not(feature = "gte-vapoursynth-api-40")
+))]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct MessageHandlerId(ffi::VSMessageHandlerId);
 
@@ -85,30 +112,79 @@ impl API {
     #[cfg(all(feature = "vsscript-functions", feature = "gte-vsscript-api-32"))]
     #[inline]
     pub fn get() -> Option<Self> {
-        // Check if we already have the API.
-        let handle = RAW_API.load(Ordering::Relaxed);
-
-        let handle = if handle.is_null() {
-            // Attempt retrieving it otherwise.
+        #[cfg(feature = "gte-vapoursynth-api-40")]
+        {
             crate::vsscript::maybe_initialize();
-            let handle =
-                unsafe { ffi::vsscript_getVSApi2(ffi::VAPOURSYNTH_API_VERSION) } as *mut ffi::VSAPI;
 
-            if !handle.is_null() {
-                // If we successfully retrieved the API, cache it.
-                RAW_API.store(handle, Ordering::Relaxed);
+            let handle = RAW_API.load(Ordering::Relaxed);
+            let handle = if handle.is_null() {
+                // Attempt retrieving it otherwise.
+                crate::vsscript::maybe_initialize();
+                let handle = unsafe { ffi::getVapourSynthAPI(ffi::VAPOURSYNTH_API_VERSION) }
+                    as *mut ffi::VSAPI;
+
+                if !handle.is_null() {
+                    // If we successfully retrieved the API, cache it.
+                    RAW_API.store(handle, Ordering::Relaxed);
+                }
+                handle
+            } else {
+                handle
+            };
+
+            let vsscript_handle = RAW_VSS_API.load(Ordering::Relaxed);
+            let vsscript_handle = if vsscript_handle.is_null() {
+                // Attempt retrieving it otherwise.
+                crate::vsscript::maybe_initialize();
+                let vsscript_handle = unsafe { ffi::getVSScriptAPI(ffi::VSSCRIPT_API_VERSION) }
+                    as *mut ffi::VSSCRIPTAPI;
+
+                if !vsscript_handle.is_null() {
+                    // If we successfully retrieved the API, cache it.
+                    RAW_VSS_API.store(vsscript_handle, Ordering::Relaxed);
+                }
+                vsscript_handle
+            } else {
+                vsscript_handle
+            };
+
+            if handle.is_null() || vsscript_handle.is_null() {
+                None
+            } else {
+                Some(Self {
+                    handle: unsafe { NonNull::new_unchecked(handle) },
+                    vsscript_handle: unsafe { NonNull::new_unchecked(vsscript_handle) },
+                })
             }
-            handle
-        } else {
-            handle
-        };
+        }
 
-        if handle.is_null() {
-            None
-        } else {
-            Some(Self {
-                handle: unsafe { NonNull::new_unchecked(handle) },
-            })
+        #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+        {
+            // Check if we already have the API.
+            let handle = RAW_API.load(Ordering::Relaxed);
+
+            let handle = if handle.is_null() {
+                // Attempt retrieving it otherwise.
+                crate::vsscript::maybe_initialize();
+                let handle = unsafe { ffi::vsscript_getVSApi2(ffi::VAPOURSYNTH_API_VERSION) }
+                    as *mut ffi::VSAPI;
+
+                if !handle.is_null() {
+                    // If we successfully retrieved the API, cache it.
+                    RAW_API.store(handle, Ordering::Relaxed);
+                }
+                handle
+            } else {
+                handle
+            };
+
+            if handle.is_null() {
+                None
+            } else {
+                Some(Self {
+                    handle: unsafe { NonNull::new_unchecked(handle) },
+                })
+            }
         }
     }
 
@@ -157,8 +233,16 @@ impl API {
         unsafe {
             Self {
                 handle: NonNull::new_unchecked(RAW_API.load(Ordering::Relaxed)),
+                #[cfg(feature = "gte-vapoursynth-api-40")]
+                vsscript_handle: NonNull::new_unchecked(RAW_VSS_API.load(Ordering::Relaxed)),
             }
         }
+    }
+
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn vssapi(&self) -> *const ffi::VSSCRIPTAPI {
+        self.vsscript_handle.as_ptr() as *const ffi::VSSCRIPTAPI
     }
 
     /// Stores the API in the cache.
@@ -171,12 +255,35 @@ impl API {
     }
 
     /// Sends a message through VapourSynth’s logging framework.
-    #[cfg(feature = "gte-vapoursynth-api-34")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-34",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     #[inline]
     pub fn log(self, message_type: MessageType, message: &str) -> Result<(), NulError> {
         let message = CString::new(message)?;
         unsafe {
             (self.handle.as_ref().logMessage)(message_type.ffi_type(), message.as_ptr());
+        }
+        Ok(())
+    }
+
+    /// Sends a message through VapourSynth’s logging framework.
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    #[inline]
+    pub fn log(
+        self,
+        message_type: MessageType,
+        message: &str,
+        core: CoreRef<'_>,
+    ) -> Result<(), NulError> {
+        let message = CString::new(message)?;
+        unsafe {
+            (self.handle.as_ref().logMessage)(
+                message_type.ffi_type(),
+                message.as_ptr(),
+                core.ptr(),
+            );
         }
         Ok(())
     }
@@ -196,6 +303,7 @@ impl API {
         feature = "gte-vapoursynth-api-36",
         deprecated(note = "use `add_message_handler` and `remove_message_handler` instead")
     )]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub fn set_message_handler<F>(self, callback: F)
     where
         F: FnMut(MessageType, &CStr) + Send + 'static,
@@ -257,7 +365,10 @@ impl API {
     ///
     /// [`remove_message_handler`]: #method.remove_message_handler
     #[inline]
-    #[cfg(feature = "gte-vapoursynth-api-36")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-36",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     pub fn add_message_handler<F>(self, callback: F) -> MessageHandlerId
     where
         F: FnMut(MessageType, &CStr) + Send + 'static,
@@ -317,6 +428,27 @@ impl API {
     /// Installs a custom handler for the various error messages VapourSynth emits. The message
     /// handler is currently global, i.e. per process, not per VSCore instance.
     ///
+    /// The unique ID for the handler is returned, which can be used to remove it using
+    /// [`remove_message_handler`].
+    ///
+    /// If no error handler is installed the messages are sent to the standard error stream.
+    ///
+    /// The callback arguments are the message type and the message itself. If the callback panics,
+    /// the process is aborted.
+    ///
+    /// [`remove_message_handler`]: #method.remove_message_handler
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub fn add_message_handler<F>(self, callback: F) -> !
+    where
+        F: FnMut(MessageType, &CStr) + Send + 'static,
+    {
+        todo!();
+    }
+
+    /// Installs a custom handler for the various error messages VapourSynth emits. The message
+    /// handler is currently global, i.e. per process, not per VSCore instance.
+    ///
     /// The default message handler simply sends the messages to the standard error stream.
     ///
     /// The callback arguments are the message type and the message itself. If the callback panics,
@@ -331,6 +463,7 @@ impl API {
             note = "use `add_message_handler_trivial` and `remove_message_handler` instead"
         )
     )]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub fn set_message_handler_trivial(self, callback: fn(MessageType, &CStr)) {
         unsafe extern "system" fn c_callback(
             msg_type: c_int,
@@ -376,7 +509,10 @@ impl API {
     ///
     /// [`remove_message_handler`]: #method.remove_message_handler
     #[inline]
-    #[cfg(feature = "gte-vapoursynth-api-36")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-36",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     pub fn add_message_handler_trivial(self, callback: fn(MessageType, &CStr)) -> MessageHandlerId {
         unsafe extern "system" fn c_callback(
             msg_type: c_int,
@@ -410,12 +546,34 @@ impl API {
         MessageHandlerId(id)
     }
 
+    /// Installs a custom handler for the various error messages VapourSynth emits. The message
+    /// handler is currently global, i.e. per process, not per VSCore instance.
+    ///
+    /// The unique ID for the handler is returned, which can be used to remove it using
+    /// [`remove_message_handler`].
+    ///
+    /// If no error handler is installed the messages are sent to the standard error stream.
+    ///
+    /// The callback arguments are the message type and the message itself. If the callback panics,
+    /// the process is aborted.
+    ///
+    /// This version does not allocate at the cost of accepting a function pointer rather than an
+    /// arbitrary closure. It can, however, be used with simple closures.
+    ///
+    /// [`remove_message_handler`]: #method.remove_message_handler
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub fn add_message_handler_trivial(self, callback: fn(MessageType, &CStr)) -> ! {
+        todo!()
+    }
+
     /// Clears any custom message handler, restoring the default one.
     #[inline]
     #[cfg_attr(
         feature = "gte-vapoursynth-api-36",
         deprecated(note = "use `add_message_handler` and `remove_message_handler` instead")
     )]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub fn clear_message_handler(self) {
         unsafe {
             #[allow(deprecated)]
@@ -427,10 +585,34 @@ impl API {
     ///
     /// If this is the only custom message handler, this will restore the default one.
     #[inline]
-    #[cfg(feature = "gte-vapoursynth-api-36")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-36",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     pub fn remove_message_handler(self, handler_id: MessageHandlerId) {
         unsafe {
             (self.handle.as_ref().removeMessageHandler)(handler_id.0);
+        }
+    }
+
+    /// Clears a custom message handler.
+    ///
+    /// If this is the only custom message handler, this will restore the default one.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub fn remove_message_handler(self) {
+        todo!()
+    }
+
+    /// Frees `node`.
+    ///
+    /// # Safety
+    /// The caller must ensure `node` is valid.
+    #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+    pub(crate) unsafe fn free_node(self, node: *mut ffi::VSNodeRef) {
+        unsafe {
+            (self.handle.as_ref().freeNode)(node);
         }
     }
 
@@ -439,7 +621,8 @@ impl API {
     /// # Safety
     /// The caller must ensure `node` is valid.
     #[inline]
-    pub(crate) unsafe fn free_node(self, node: *mut ffi::VSNodeRef) {
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn free_node(self, node: *mut ffi::VSNode) {
         unsafe {
             (self.handle.as_ref().freeNode)(node);
         }
@@ -450,8 +633,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `node` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn clone_node(self, node: *mut ffi::VSNodeRef) -> *mut ffi::VSNodeRef {
         unsafe { (self.handle.as_ref().cloneNodeRef)(node) }
+    }
+
+    /// Clones `node`.
+    ///
+    /// # Safety
+    /// The caller must ensure `node` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn clone_node(self, node: *mut ffi::VSNode) -> *mut ffi::VSNode {
+        unsafe { (self.handle.as_ref().addNodeRef)(node) }
     }
 
     /// Returns a pointer to the video info associated with `node`. The pointer is valid as long as
@@ -460,10 +654,22 @@ impl API {
     /// # Safety
     /// The caller must ensure `node` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_video_info(
         self,
         node: *mut ffi::VSNodeRef,
     ) -> *const ffi::VSVideoInfo {
+        unsafe { (self.handle.as_ref().getVideoInfo)(node) }
+    }
+
+    /// Returns a pointer to the video info associated with `node`. The pointer is valid as long as
+    /// the node lives.
+    ///
+    /// # Safety
+    /// The caller must ensure `node` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_video_info(self, node: *mut ffi::VSNode) -> *const ffi::VSVideoInfo {
         unsafe { (self.handle.as_ref().getVideoInfo)(node) }
     }
 
@@ -475,6 +681,7 @@ impl API {
     /// # Panics
     /// Panics if `err_msg` is larger than `i32::MAX`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame(
         self,
         n: i32,
@@ -493,12 +700,55 @@ impl API {
     /// Generates a frame directly.
     ///
     /// # Safety
+    /// The caller must ensure `node` is valid.
+    ///
+    /// # Panics
+    /// Panics if `err_msg` is larger than `i32::MAX`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame(
+        self,
+        n: i32,
+        node: *mut ffi::VSNode,
+        err_msg: &mut [c_char],
+    ) -> *const ffi::VSFrame {
+        unsafe {
+            let len = err_msg.len();
+            assert!(len <= i32::MAX as usize);
+            let len = len as i32;
+
+            (self.handle.as_ref().getFrame)(n, node, err_msg.as_mut_ptr(), len)
+        }
+    }
+
+    /// Generates a frame directly.
+    ///
+    /// # Safety
     /// The caller must ensure `node` and `callback` are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_async(
         self,
         n: i32,
         node: *mut ffi::VSNodeRef,
+        callback: ffi::VSFrameDoneCallback,
+        user_data: *mut c_void,
+    ) {
+        unsafe {
+            (self.handle.as_ref().getFrameAsync)(n, node, callback, user_data);
+        }
+    }
+
+    /// Generates a frame directly.
+    ///
+    /// # Safety
+    /// The caller must ensure `node` and `callback` are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_async(
+        self,
+        n: i32,
+        node: *mut ffi::VSNode,
         callback: ffi::VSFrameDoneCallback,
         user_data: *mut c_void,
     ) {
@@ -512,7 +762,20 @@ impl API {
     /// # Safety
     /// The caller must ensure `frame` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn free_frame(self, frame: &ffi::VSFrameRef) {
+        unsafe {
+            (self.handle.as_ref().freeFrame)(frame);
+        }
+    }
+
+    /// Frees `frame`.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn free_frame(self, frame: &ffi::VSFrame) {
         unsafe {
             (self.handle.as_ref().freeFrame)(frame);
         }
@@ -523,8 +786,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `frame` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn clone_frame(self, frame: &ffi::VSFrameRef) -> *const ffi::VSFrameRef {
         unsafe { (self.handle.as_ref().cloneFrameRef)(frame) }
+    }
+
+    /// Clones `frame`.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn clone_frame(self, frame: &ffi::VSFrame) -> *const ffi::VSFrame {
+        unsafe { (self.handle.as_ref().addFrameRef)(frame) }
     }
 
     /// Retrieves the format of a frame.
@@ -532,8 +806,32 @@ impl API {
     /// # Safety
     /// The caller must ensure `frame` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_format(self, frame: &ffi::VSFrameRef) -> *const ffi::VSFormat {
         unsafe { (self.handle.as_ref().getFrameFormat)(frame) }
+    }
+
+    /// Retrieves the format of a frame.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_format(self, frame: &ffi::VSFrame) -> *const ffi::VSVideoFormat {
+        unsafe { (self.handle.as_ref().getVideoFrameFormat)(frame) }
+    }
+
+    /// Retrieves the format of a frame.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_audio_frame_format(
+        self,
+        frame: &ffi::VSFrame,
+    ) -> *const ffi::VSAudioFormat {
+        unsafe { (self.handle.as_ref().getAudioFrameFormat)(frame) }
     }
 
     /// Returns the width of a plane of a given frame, in pixels.
@@ -541,7 +839,18 @@ impl API {
     /// # Safety
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_width(self, frame: &ffi::VSFrameRef, plane: i32) -> i32 {
+        unsafe { (self.handle.as_ref().getFrameWidth)(frame, plane) }
+    }
+
+    /// Returns the width of a plane of a given frame, in pixels.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_width(self, frame: &ffi::VSFrame, plane: i32) -> i32 {
         unsafe { (self.handle.as_ref().getFrameWidth)(frame, plane) }
     }
 
@@ -550,7 +859,18 @@ impl API {
     /// # Safety
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_height(self, frame: &ffi::VSFrameRef, plane: i32) -> i32 {
+        unsafe { (self.handle.as_ref().getFrameHeight)(frame, plane) }
+    }
+
+    /// Returns the height of a plane of a given frame, in pixels.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_height(self, frame: &ffi::VSFrame, plane: i32) -> i32 {
         unsafe { (self.handle.as_ref().getFrameHeight)(frame, plane) }
     }
 
@@ -559,7 +879,18 @@ impl API {
     /// # Safety
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_stride(self, frame: &ffi::VSFrameRef, plane: i32) -> i32 {
+        unsafe { (self.handle.as_ref().getStride)(frame, plane) }
+    }
+
+    /// Returns the distance in bytes between two consecutive lines of a plane of a frame.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_stride(self, frame: &ffi::VSFrame, plane: i32) -> i32 {
         unsafe { (self.handle.as_ref().getStride)(frame, plane) }
     }
 
@@ -568,6 +899,7 @@ impl API {
     /// # Safety
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_read_ptr(
         self,
         frame: &ffi::VSFrameRef,
@@ -576,14 +908,39 @@ impl API {
         unsafe { (self.handle.as_ref().getReadPtr)(frame, plane) }
     }
 
+    /// Returns a read-only pointer to a plane of a frame.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_read_ptr(self, frame: &ffi::VSFrame, plane: i32) -> *const u8 {
+        unsafe { (self.handle.as_ref().getReadPtr)(frame, plane) }
+    }
+
     /// Returns a read-write pointer to a plane of a frame.
     ///
     /// # Safety
     /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_write_ptr(
         self,
         frame: &mut ffi::VSFrameRef,
+        plane: i32,
+    ) -> *mut u8 {
+        unsafe { (self.handle.as_ref().getWritePtr)(frame, plane) }
+    }
+
+    /// Returns a read-write pointer to a plane of a frame.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid and `plane` is valid for the given `frame`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_write_ptr(
+        self,
+        frame: &mut ffi::VSFrame,
         plane: i32,
     ) -> *mut u8 {
         unsafe { (self.handle.as_ref().getWritePtr)(frame, plane) }
@@ -595,8 +952,20 @@ impl API {
     /// The caller must ensure `frame` is valid and the correct lifetime is assigned to the
     /// returned map (it can't outlive `frame`).
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_props_ro(self, frame: &ffi::VSFrameRef) -> *const ffi::VSMap {
         unsafe { (self.handle.as_ref().getFramePropsRO)(frame) }
+    }
+
+    /// Returns a read-only pointer to a frame's properties.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid and the correct lifetime is assigned to the
+    /// returned map (it can't outlive `frame`).
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_props_ro(self, frame: &ffi::VSFrame) -> *const ffi::VSMap {
+        unsafe { (self.handle.as_ref().getFramePropertiesRO)(frame) }
     }
 
     /// Returns a read-write pointer to a frame's properties.
@@ -605,8 +974,20 @@ impl API {
     /// The caller must ensure `frame` is valid and the correct lifetime is assigned to the
     /// returned map (it can't outlive `frame`).
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_props_rw(self, frame: &mut ffi::VSFrameRef) -> *mut ffi::VSMap {
         unsafe { (self.handle.as_ref().getFramePropsRW)(frame) }
+    }
+
+    /// Returns a read-write pointer to a frame's properties.
+    ///
+    /// # Safety
+    /// The caller must ensure `frame` is valid and the correct lifetime is assigned to the
+    /// returned map (it can't outlive `frame`).
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_props_rw(self, frame: &mut ffi::VSFrame) -> *mut ffi::VSMap {
+        unsafe { (self.handle.as_ref().getFramePropertiesRW)(frame) }
     }
 
     /// Creates a new `VSMap`.
@@ -643,8 +1024,20 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_error(self, map: &ffi::VSMap) -> *const c_char {
         unsafe { (self.handle.as_ref().getError)(map) }
+    }
+
+    /// Returns a pointer to the error message contained in the map, or NULL if there is no error
+    /// message.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_error(self, map: &ffi::VSMap) -> *const c_char {
+        todo!()
     }
 
     /// Adds an error message to a map. The map is cleared first. The error message is copied.
@@ -652,8 +1045,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` and `errorMessage` are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn set_error(self, map: &mut ffi::VSMap, error_message: *const c_char) {
         unsafe { (self.handle.as_ref().setError)(map, error_message) }
+    }
+
+    /// Adds an error message to a map. The map is cleared first. The error message is copied.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `errorMessage` are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn set_error(self, map: &mut ffi::VSMap, error_message: *const c_char) {
+        todo!()
     }
 
     /// Returns the number of keys contained in a map.
@@ -661,8 +1065,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn prop_num_keys(self, map: &ffi::VSMap) -> i32 {
         unsafe { (self.handle.as_ref().propNumKeys)(map) }
+    }
+
+    /// Returns the number of keys contained in a map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn prop_num_keys(self, map: &ffi::VSMap) -> i32 {
+        unsafe { (self.handle.as_ref().mapNumKeys)(map) }
     }
 
     /// Returns a key from a property map.
@@ -670,8 +1085,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` is valid and `index` is valid for `map`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn prop_get_key(self, map: &ffi::VSMap, index: i32) -> *const c_char {
         unsafe { (self.handle.as_ref().propGetKey)(map, index) }
+    }
+
+    /// Returns a key from a property map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` is valid and `index` is valid for `map`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn prop_get_key(self, map: &ffi::VSMap, index: i32) -> *const c_char {
+        unsafe { (self.handle.as_ref().mapGetKey)(map, index) }
     }
 
     /// Removes the key from a property map.
@@ -679,8 +1105,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` and `key` are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn prop_delete_key(self, map: &mut ffi::VSMap, key: *const c_char) -> i32 {
         unsafe { (self.handle.as_ref().propDeleteKey)(map, key) }
+    }
+
+    /// Removes the key from a property map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn prop_delete_key(self, map: &mut ffi::VSMap, key: *const c_char) -> i32 {
+        unsafe { (self.handle.as_ref().mapDeleteKey)(map, key) }
     }
 
     /// Returns the number of elements associated with a key in a property map.
@@ -688,8 +1125,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` and `key` are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn prop_num_elements(self, map: &ffi::VSMap, key: *const c_char) -> i32 {
         unsafe { (self.handle.as_ref().propNumElements)(map, key) }
+    }
+
+    /// Returns the number of elements associated with a key in a property map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn prop_num_elements(self, map: &ffi::VSMap, key: *const c_char) -> i32 {
+        unsafe { (self.handle.as_ref().mapNumElements)(map, key) }
     }
 
     /// Returns the type of the elements associated with the given key in a property map.
@@ -697,8 +1145,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` and `key` are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn prop_get_type(self, map: &ffi::VSMap, key: *const c_char) -> c_char {
         unsafe { (self.handle.as_ref().propGetType)(map, key) }
+    }
+
+    /// Returns the type of the elements associated with the given key in a property map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn prop_get_type(self, map: &ffi::VSMap, key: *const c_char) -> i32 {
+        unsafe { (self.handle.as_ref().mapGetType)(map, key) }
     }
 
     /// Returns the size in bytes of a property of type ptData.
@@ -706,6 +1165,7 @@ impl API {
     /// # Safety
     /// The caller must ensure `map` and `key` are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn prop_get_data_size(
         self,
         map: &ffi::VSMap,
@@ -716,24 +1176,78 @@ impl API {
         unsafe { (self.handle.as_ref().propGetDataSize)(map, key, index, error) }
     }
 
+    /// Returns the size in bytes of a property of type ptData.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn prop_get_data_size(
+        self,
+        map: &ffi::VSMap,
+        key: *const c_char,
+        index: i32,
+        error: &mut i32,
+    ) -> i32 {
+        unsafe { (self.handle.as_ref().mapGetDataSize)(map, key, index, error) }
+    }
+
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_get_something!(prop_get_int, propGetInt, i64);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_get_something!(prop_get_float, propGetFloat, f64);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_get_something!(prop_get_data, propGetData, *const c_char);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_get_something!(prop_get_node, propGetNode, *mut ffi::VSNodeRef);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_get_something!(prop_get_frame, propGetFrame, *const ffi::VSFrameRef);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_get_something!(prop_get_func, propGetFunc, *mut ffi::VSFuncRef);
 
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_set_something!(prop_set_int, propSetInt, i64);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_set_something!(prop_set_float, propSetFloat, f64);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_set_something!(prop_set_node, propSetNode, *mut ffi::VSNodeRef);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_set_something!(prop_set_frame, propSetFrame, *const ffi::VSFrameRef);
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     prop_set_something!(prop_set_func, propSetFunc, *mut ffi::VSFuncRef);
+
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_get_something!(prop_get_int, mapGetInt, i64);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_get_something!(prop_get_float, mapGetFloat, f64);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_get_something!(prop_get_data, mapGetData, *const c_char);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_get_something!(prop_get_node, mapGetNode, *mut ffi::VSNode);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_get_something!(prop_get_frame, mapGetFrame, *const ffi::VSFrame);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_get_something!(prop_get_func, mapGetFunction, *mut ffi::VSFunction);
+
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_set_something!(prop_set_int, mapSetInt, i64);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_set_something!(prop_set_float, mapSetFloat, f64);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_set_something!(prop_set_node, mapSetNode, *mut ffi::VSNode);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_set_something!(prop_set_frame, mapSetFrame, *const ffi::VSFrame);
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    prop_set_something!(prop_set_func, mapSetFunction, *mut ffi::VSFunction);
 
     /// Retrieves an array of integers from a map.
     ///
     /// # Safety
     /// The caller must ensure `map` and `key` are valid.
-    #[cfg(feature = "gte-vapoursynth-api-31")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-31",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     #[inline]
     pub(crate) unsafe fn prop_get_int_array(
         self,
@@ -744,11 +1258,29 @@ impl API {
         unsafe { (self.handle.as_ref().propGetIntArray)(map, key, error) }
     }
 
+    /// Retrieves an array of integers from a map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    #[inline]
+    pub(crate) unsafe fn prop_get_int_array(
+        self,
+        map: &ffi::VSMap,
+        key: *const c_char,
+        error: &mut i32,
+    ) -> *const i64 {
+        unsafe { (self.handle.as_ref().mapGetIntArray)(map, key, error) }
+    }
+
     /// Retrieves an array of floating point numbers from a map.
     ///
     /// # Safety
     /// The caller must ensure `map` and `key` are valid.
-    #[cfg(feature = "gte-vapoursynth-api-31")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-31",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     #[inline]
     pub(crate) unsafe fn prop_get_float_array(
         self,
@@ -759,6 +1291,21 @@ impl API {
         unsafe { (self.handle.as_ref().propGetFloatArray)(map, key, error) }
     }
 
+    /// Retrieves an array of floating point numbers from a map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    #[inline]
+    pub(crate) unsafe fn prop_get_float_array(
+        self,
+        map: &ffi::VSMap,
+        key: *const c_char,
+        error: &mut i32,
+    ) -> *const f64 {
+        unsafe { (self.handle.as_ref().mapGetFloatArray)(map, key, error) }
+    }
+
     /// Adds a data property to the map.
     ///
     /// # Safety
@@ -767,6 +1314,7 @@ impl API {
     /// # Panics
     /// Panics if `value.len()` can't fit in an `i32`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn prop_set_data(
         self,
         map: &mut ffi::VSMap,
@@ -783,6 +1331,25 @@ impl API {
         }
     }
 
+    /// Adds a data property to the map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    ///
+    /// # Panics
+    /// Panics if `value.len()` can't fit in an `i32`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn prop_set_data(
+        self,
+        map: &mut ffi::VSMap,
+        key: *const c_char,
+        value: &[u8],
+        append: ffi::VSMapAppendMode,
+    ) -> i32 {
+        todo!()
+    }
+
     /// Adds an array of integers to the map.
     ///
     /// # Safety
@@ -790,7 +1357,10 @@ impl API {
     ///
     /// # Panics
     /// Panics if `value.len()` can't fit in an `i32`.
-    #[cfg(feature = "gte-vapoursynth-api-31")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-31",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     #[inline]
     pub(crate) unsafe fn prop_set_int_array(
         self,
@@ -807,6 +1377,30 @@ impl API {
         }
     }
 
+    /// Adds an array of integers to the map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    ///
+    /// # Panics
+    /// Panics if `value.len()` can't fit in an `i32`.
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    #[inline]
+    pub(crate) unsafe fn prop_set_int_array(
+        self,
+        map: &mut ffi::VSMap,
+        key: *const c_char,
+        value: &[i64],
+    ) -> i32 {
+        unsafe {
+            let length = value.len();
+            assert!(length <= i32::MAX as usize);
+            let length = length as i32;
+
+            (self.handle.as_ref().mapSetIntArray)(map, key, value.as_ptr(), length)
+        }
+    }
+
     /// Adds an array of floating point numbers to the map.
     ///
     /// # Safety
@@ -814,7 +1408,10 @@ impl API {
     ///
     /// # Panics
     /// Panics if `value.len()` can't fit in an `i32`.
-    #[cfg(feature = "gte-vapoursynth-api-31")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-31",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     #[inline]
     pub(crate) unsafe fn prop_set_float_array(
         self,
@@ -831,14 +1428,51 @@ impl API {
         }
     }
 
+    /// Adds an array of floating point numbers to the map.
+    ///
+    /// # Safety
+    /// The caller must ensure `map` and `key` are valid.
+    ///
+    /// # Panics
+    /// Panics if `value.len()` can't fit in an `i32`.
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    #[inline]
+    pub(crate) unsafe fn prop_set_float_array(
+        self,
+        map: &mut ffi::VSMap,
+        key: *const c_char,
+        value: &[f64],
+    ) -> i32 {
+        unsafe {
+            let length = value.len();
+            assert!(length <= i32::MAX as usize);
+            let length = length as i32;
+
+            (self.handle.as_ref().mapSetFloatArray)(map, key, value.as_ptr(), length)
+        }
+    }
+
     /// Frees `function`.
     ///
     /// # Safety
     /// The caller must ensure `function` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn free_func(self, function: *mut ffi::VSFuncRef) {
         unsafe {
             (self.handle.as_ref().freeFunc)(function);
+        }
+    }
+
+    /// Frees `function`.
+    ///
+    /// # Safety
+    /// The caller must ensure `function` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn free_func(self, function: *mut ffi::VSFunction) {
+        unsafe {
+            (self.handle.as_ref().freeFunction)(function);
         }
     }
 
@@ -847,8 +1481,19 @@ impl API {
     /// # Safety
     /// The caller must ensure `function` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn clone_func(self, function: *mut ffi::VSFuncRef) -> *mut ffi::VSFuncRef {
         unsafe { (self.handle.as_ref().cloneFuncRef)(function) }
+    }
+
+    /// Clones `function`.
+    ///
+    /// # Safety
+    /// The caller must ensure `function` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn clone_func(self, function: *mut ffi::VSFunction) -> *mut ffi::VSFunction {
+        unsafe { (self.handle.as_ref().addFunctionRef)(function) }
     }
 
     /// Returns information about the VapourSynth core.
@@ -866,7 +1511,10 @@ impl API {
     /// # Safety
     /// The caller must ensure `core` is valid.
     #[inline]
-    #[cfg(feature = "gte-vapoursynth-api-36")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-36",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     pub(crate) unsafe fn get_core_info(self, core: *mut ffi::VSCore) -> ffi::VSCoreInfo {
         unsafe {
             use std::mem::MaybeUninit;
@@ -877,11 +1525,28 @@ impl API {
         }
     }
 
+    /// Returns information about the VapourSynth core.
+    ///
+    /// # Safety
+    /// The caller must ensure `core` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_core_info(self, core: *mut ffi::VSCore) -> ffi::VSCoreInfo {
+        unsafe {
+            use std::mem::MaybeUninit;
+
+            let mut core_info = MaybeUninit::uninit();
+            (self.handle.as_ref().getCoreInfo)(core, core_info.as_mut_ptr());
+            core_info.assume_init()
+        }
+    }
+
     /// Returns a VSFormat structure from a video format identifier.
     ///
     /// # Safety
     /// The caller must ensure `core` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_format_preset(
         self,
         id: i32,
@@ -890,11 +1555,26 @@ impl API {
         unsafe { (self.handle.as_ref().getFormatPreset)(id, core) }
     }
 
+    /// Returns a VSFormat structure from a video format identifier.
+    ///
+    /// # Safety
+    /// The caller must ensure `core` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_format_preset(
+        self,
+        id: i32,
+        core: *mut ffi::VSCore,
+    ) -> *const ffi::VSVideoFormat {
+        todo!()
+    }
+
     /// Registers a custom video format.
     ///
     /// # Safety
     /// The caller must ensure `core` is valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn register_format(
         self,
         color_family: ffi::VSColorFamily,
@@ -916,12 +1596,31 @@ impl API {
         }
     }
 
+    /// Registers a custom video format.
+    ///
+    /// # Safety
+    /// The caller must ensure `core` is valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn register_format(
+        self,
+        color_family: ffi::VSColorFamily,
+        sample_type: ffi::VSSampleType,
+        bits_per_sample: i32,
+        sub_sampling_w: i32,
+        sub_sampling_h: i32,
+        core: *mut ffi::VSCore,
+    ) -> *const ffi::VSVideoFormat {
+        todo!("I'm not even sure if this is possible in api v4")
+    }
+
     /// Creates a new filter node.
     ///
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[allow(clippy::too_many_arguments)]
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn create_filter(
         self,
         in_: *const ffi::VSMap,
@@ -951,6 +1650,28 @@ impl API {
         }
     }
 
+    /// Creates a new filter node.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn create_filter(
+        self,
+        in_: *const ffi::VSMap,
+        out: *mut ffi::VSMap,
+        name: *const c_char,
+        init: ffi::VSInitPlugin,
+        get_frame: ffi::VSFilterGetFrame,
+        free: ffi::VSFilterFree,
+        filter_mode: ffi::VSFilterMode,
+        instance_data: *mut c_void,
+        core: *mut ffi::VSCore,
+    ) {
+        todo!()
+    }
+
     /// Sets node's video info.
     ///
     /// # Safety
@@ -959,6 +1680,7 @@ impl API {
     /// # Panics
     /// Panics if `vi.len()` can't fit in an `i32`.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn set_video_info(self, vi: &[ffi::VSVideoInfo], node: *mut ffi::VSNode) {
         unsafe {
             let length = vi.len();
@@ -966,6 +1688,38 @@ impl API {
             let length = length as i32;
 
             (self.handle.as_ref().setVideoInfo)(vi.as_ptr(), length, node);
+        }
+    }
+
+    /// Sets node's video info.
+    ///
+    /// # Safety
+    /// The caller must ensure `node` is valid.
+    ///
+    /// # Panics
+    /// Panics if `vi.len()` can't fit in an `i32`.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn set_video_info(self, vi: &[ffi::VSVideoInfo], node: *mut ffi::VSNode) {
+        todo!()
+    }
+
+    /// Adds an error message to a frame context, replacing the existing message, if any.
+    ///
+    /// This is the way to report errors in a filter's "get frame" function. Such errors are not
+    /// necessarily fatal, i.e. the caller can try to request the same frame again.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+    pub(crate) unsafe fn set_filter_error(
+        self,
+        message: *const c_char,
+        frame_ctx: *mut ffi::VSFrameContext,
+    ) {
+        unsafe {
+            (self.handle.as_ref().setFilterError)(message, frame_ctx);
         }
     }
 
@@ -977,6 +1731,7 @@ impl API {
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
     pub(crate) unsafe fn set_filter_error(
         self,
         message: *const c_char,
@@ -995,10 +1750,31 @@ impl API {
     /// The caller must ensure all pointers are valid and this is called from a filter "get frame"
     /// function.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn request_frame_filter(
         self,
         n: i32,
         node: *mut ffi::VSNodeRef,
+        frame_ctx: *mut ffi::VSFrameContext,
+    ) {
+        unsafe {
+            (self.handle.as_ref().requestFrameFilter)(n, node, frame_ctx);
+        }
+    }
+
+    /// Requests a frame from a node and returns immediately.
+    ///
+    /// This is only used in filters' "get frame" functions.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid and this is called from a filter "get frame"
+    /// function.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn request_frame_filter(
+        self,
+        n: i32,
+        node: *mut ffi::VSNode,
         frame_ctx: *mut ffi::VSFrameContext,
     ) {
         unsafe {
@@ -1014,12 +1790,31 @@ impl API {
     /// The caller must ensure all pointers are valid and this is called from a filter "get frame"
     /// function.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_frame_filter(
         self,
         n: i32,
         node: *mut ffi::VSNodeRef,
         frame_ctx: *mut ffi::VSFrameContext,
     ) -> *const ffi::VSFrameRef {
+        unsafe { (self.handle.as_ref().getFrameFilter)(n, node, frame_ctx) }
+    }
+
+    /// Retrieves a frame that was previously requested with `request_frame_filter()`.
+    ///
+    /// This is only used in filters' "get frame" functions.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid and this is called from a filter "get frame"
+    /// function.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_frame_filter(
+        self,
+        n: i32,
+        node: *mut ffi::VSNode,
+        frame_ctx: *mut ffi::VSFrameContext,
+    ) -> *const ffi::VSFrame {
         unsafe { (self.handle.as_ref().getFrameFilter)(n, node, frame_ctx) }
     }
 
@@ -1030,11 +1825,28 @@ impl API {
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn copy_frame(
         self,
         f: &ffi::VSFrameRef,
         core: *mut ffi::VSCore,
     ) -> *mut ffi::VSFrameRef {
+        unsafe { (self.handle.as_ref().copyFrame)(f, core) }
+    }
+
+    /// Duplicates the frame (not just the reference). As the frame buffer is shared in a
+    /// copy-on-write fashion, the frame content is not really duplicated until a write operation
+    /// occurs. This is transparent for the user.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn copy_frame(
+        self,
+        f: &ffi::VSFrame,
+        core: *mut ffi::VSCore,
+    ) -> *mut ffi::VSFrame {
         unsafe { (self.handle.as_ref().copyFrame)(f, core) }
     }
 
@@ -1045,6 +1857,7 @@ impl API {
     /// The caller must ensure all pointers are valid and that the uninitialized plane data of the
     /// returned frame is handled carefully.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn new_video_frame(
         self,
         format: &ffi::VSFormat,
@@ -1056,11 +1869,31 @@ impl API {
         unsafe { (self.handle.as_ref().newVideoFrame)(format, width, height, prop_src, core) }
     }
 
+    /// Creates a new frame, optionally copying the properties attached to another frame. The new
+    /// frame contains uninitialised memory.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid and that the uninitialized plane data of the
+    /// returned frame is handled carefully.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn new_video_frame(
+        self,
+        format: &ffi::VSVideoFormat,
+        width: i32,
+        height: i32,
+        prop_src: *const ffi::VSFrame,
+        core: *mut ffi::VSCore,
+    ) -> *mut ffi::VSFrame {
+        unsafe { (self.handle.as_ref().newVideoFrame)(format, width, height, prop_src, core) }
+    }
+
     /// Returns a pointer to the plugin with the given identifier, or a null pointer if not found.
     ///
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_plugin_by_id(
         self,
         identifier: *const c_char,
@@ -1069,11 +1902,26 @@ impl API {
         unsafe { (self.handle.as_ref().getPluginById)(identifier, core) }
     }
 
+    /// Returns a pointer to the plugin with the given identifier, or a null pointer if not found.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_plugin_by_id(
+        self,
+        identifier: *const c_char,
+        core: *mut ffi::VSCore,
+    ) -> *mut ffi::VSPlugin {
+        unsafe { (self.handle.as_ref().getPluginByID)(identifier, core) }
+    }
+
     /// Returns a pointer to the plugin with the given namespace, or a null pointer if not found.
     ///
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_plugin_by_ns(
         self,
         namespace: *const c_char,
@@ -1082,13 +1930,38 @@ impl API {
         unsafe { (self.handle.as_ref().getPluginByNs)(namespace, core) }
     }
 
+    /// Returns a pointer to the plugin with the given namespace, or a null pointer if not found.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_plugin_by_ns(
+        self,
+        namespace: *const c_char,
+        core: *mut ffi::VSCore,
+    ) -> *mut ffi::VSPlugin {
+        unsafe { (self.handle.as_ref().getPluginByNamespace)(namespace, core) }
+    }
+
     /// Returns a map containing a list of all loaded plugins.
     ///
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_plugins(self, core: *mut ffi::VSCore) -> *mut ffi::VSMap {
         unsafe { (self.handle.as_ref().getPlugins)(core) }
+    }
+
+    /// Returns a map containing a list of all loaded plugins.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn get_plugins(self, core: *mut ffi::VSCore) -> *mut ffi::VSMap {
+        todo!("I'm not sure that this is in the v4 API")
     }
 
     /// Returns a map containing a list of the filters exported by a plugin.
@@ -1096,6 +1969,7 @@ impl API {
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_functions(self, plugin: *mut ffi::VSPlugin) -> *mut ffi::VSMap {
         unsafe { (self.handle.as_ref().getFunctions)(plugin) }
     }
@@ -1111,7 +1985,10 @@ impl API {
     /// The caller must ensure all pointers are valid.
     // This was introduced in R25 without bumping the API version (R3) but we must be sure it's
     // there, so require R3.1.
-    #[cfg(feature = "gte-vapoursynth-api-31")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-31",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     #[inline]
     pub(crate) unsafe fn get_plugin_path(self, plugin: *mut ffi::VSPlugin) -> *const c_char {
         unsafe { (self.handle.as_ref().getPluginPath)(plugin) }
@@ -1122,6 +1999,7 @@ impl API {
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn invoke(
         self,
         plugin: *mut ffi::VSPlugin,
@@ -1136,6 +2014,7 @@ impl API {
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn get_output_index(self, frame_ctx: *mut ffi::VSFrameContext) -> i32 {
         unsafe { (self.handle.as_ref().getOutputIndex)(frame_ctx) }
     }
@@ -1145,6 +2024,7 @@ impl API {
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn create_func(
         self,
         func: ffi::VSPublicFunction,
@@ -1157,11 +2037,28 @@ impl API {
         }
     }
 
+    /// Creates a user-defined function.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn create_func(
+        self,
+        func: ffi::VSPublicFunction,
+        user_data: *mut c_void,
+        free: ffi::VSFreeFunctionData,
+        core: *mut ffi::VSCore,
+    ) -> *mut ffi::VSFunction {
+        unsafe { (self.handle.as_ref().createFunction)(func, user_data, free, core) }
+    }
+
     /// Calls a function. If the call fails out will have an error set.
     ///
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn call_func(
         self,
         func: *mut ffi::VSFuncRef,
@@ -1173,11 +2070,29 @@ impl API {
         }
     }
 
+    /// Calls a function. If the call fails out will have an error set.
+    ///
+    /// # Safety
+    /// The caller must ensure all pointers are valid.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn call_func(
+        self,
+        func: *mut ffi::VSFunction,
+        in_: *const ffi::VSMap,
+        out: *mut ffi::VSMap,
+    ) {
+        unsafe {
+            (self.handle.as_ref().callFunction)(func, in_, out);
+        }
+    }
+
     /// Registers a filter exported by the plugin. A plugin can export any number of filters.
     ///
     /// # Safety
     /// The caller must ensure all pointers are valid.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn register_function(
         self,
         name: *const c_char,

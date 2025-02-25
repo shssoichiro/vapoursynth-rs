@@ -201,8 +201,13 @@ pub mod prelude {
     pub use super::plugin::Plugin;
     pub use super::video_info::Property;
 
+    #[cfg(all(
+        not(feature = "gte-vapoursynth-api-40"),
+        feature = "vsscript-functions"
+    ))]
+    pub use super::vsscript::EvalFlags;
     #[cfg(feature = "vsscript-functions")]
-    pub use super::vsscript::{self, Environment, EvalFlags};
+    pub use super::vsscript::{self, Environment};
 }
 
 mod tests;

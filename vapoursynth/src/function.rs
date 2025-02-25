@@ -14,7 +14,10 @@ use crate::map::{Map, MapRef, MapRefMut};
 /// Holds a reference to a function that may be called.
 #[derive(Debug)]
 pub struct Function<'core> {
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     handle: NonNull<ffi::VSFuncRef>,
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    handle: NonNull<ffi::VSFunction>,
     _owner: PhantomData<&'core ()>,
 }
 
@@ -47,7 +50,23 @@ impl<'core> Function<'core> {
     /// # Safety
     /// The caller must ensure `handle` and the lifetime are valid and API is cached.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSFuncRef) -> Self {
+        unsafe {
+            Self {
+                handle: NonNull::new_unchecked(handle),
+                _owner: PhantomData,
+            }
+        }
+    }
+
+    /// Wraps `handle` in a `Function`.
+    ///
+    /// # Safety
+    /// The caller must ensure `handle` and the lifetime are valid and API is cached.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSFunction) -> Self {
         unsafe {
             Self {
                 handle: NonNull::new_unchecked(handle),
@@ -58,7 +77,15 @@ impl<'core> Function<'core> {
 
     /// Returns the underlying pointer.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) fn ptr(&self) -> *mut ffi::VSFuncRef {
+        self.handle.as_ptr()
+    }
+
+    /// Returns the underlying pointer.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) fn ptr(&self) -> *mut ffi::VSFunction {
         self.handle.as_ptr()
     }
 

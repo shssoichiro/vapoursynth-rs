@@ -97,7 +97,14 @@ impl<'core> CoreRef<'core> {
     #[inline]
     pub fn get_format(&self, id: FormatID) -> Option<Format<'core>> {
         let ptr = unsafe { API::get_cached().get_format_preset(id.0, self.handle.as_ptr()) };
-        unsafe { ptr.as_ref().map(|p| Format::from_ptr(p)) }
+        #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+        unsafe {
+            ptr.as_ref().map(|p| Format::from_ptr(p))
+        }
+        #[cfg(feature = "gte-vapoursynth-api-40")]
+        unsafe {
+            ptr.as_ref().map(|p| Format::from_raw(*p))
+        }
     }
 
     /// Registers a custom video format.
@@ -128,7 +135,17 @@ impl<'core> CoreRef<'core> {
                     self.handle.as_ptr(),
                 )
                 .as_ref()
-                .map(|p| Format::from_ptr(p))
+                .map(|p| {
+                    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+                    {
+                        Format::from_ptr(p)
+                    }
+
+                    #[cfg(feature = "gte-vapoursynth-api-40")]
+                    {
+                        Format::from_raw(*p)
+                    }
+                })
         }
     }
 

@@ -24,8 +24,12 @@ pub struct NonZeroPadding(usize);
 // This type is intended to be publicly used only in reference form.
 #[derive(Debug)]
 pub struct Frame<'core> {
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     // The actual mutability of this depends on whether it's accessed via `&Frame` or `&mut Frame`.
     handle: NonNull<ffi::VSFrameRef>,
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    // The actual mutability of this depends on whether it's accessed via `&Frame` or `&mut Frame`.
+    handle: NonNull<ffi::VSFrame>,
     // The cached frame format for fast access.
     format: Format<'core>,
     _owner: PhantomData<&'core ()>,
@@ -50,7 +54,10 @@ unsafe impl Sync for Frame<'_> {}
 
 #[doc(hidden)]
 impl Deref for Frame<'_> {
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     type Target = ffi::VSFrameRef;
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    type Target = ffi::VSFrame;
 
     // Technically this should return `&'core`.
     #[inline]
@@ -120,7 +127,22 @@ impl FrameRef<'_> {
     /// # Safety
     /// The caller must ensure `handle` and the lifetime is valid and API is cached.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn from_ptr(handle: *const ffi::VSFrameRef) -> Self {
+        unsafe {
+            Self {
+                frame: Frame::from_ptr(handle),
+            }
+        }
+    }
+
+    /// Wraps `handle` in a `FrameRef`.
+    ///
+    /// # Safety
+    /// The caller must ensure `handle` and the lifetime is valid and API is cached.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn from_ptr(handle: *const ffi::VSFrame) -> Self {
         unsafe {
             Self {
                 frame: Frame::from_ptr(handle),
@@ -135,7 +157,22 @@ impl<'core> FrameRefMut<'core> {
     /// # Safety
     /// The caller must ensure `handle` and the lifetime is valid and API is cached.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSFrameRef) -> Self {
+        unsafe {
+            Self {
+                frame: Frame::from_ptr(handle),
+            }
+        }
+    }
+
+    /// Wraps `handle` in a `FrameRefMut`.
+    ///
+    /// # Safety
+    /// The caller must ensure `handle` and the lifetime is valid and API is cached.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSFrame) -> Self {
         unsafe {
             Self {
                 frame: Frame::from_ptr(handle),
@@ -204,6 +241,7 @@ impl<'core> Frame<'core> {
     /// `Frame` gets put into `FrameRef` or `FrameRefMut` according to the input pointer
     /// mutability.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn from_ptr(handle: *const ffi::VSFrameRef) -> Self {
         unsafe {
             Self {
@@ -211,6 +249,33 @@ impl<'core> Frame<'core> {
                 format: unsafe {
                     let ptr = API::get_cached().get_frame_format(&*handle);
                     Format::from_ptr(ptr)
+                },
+                _owner: PhantomData,
+            }
+        }
+    }
+
+    /// Converts a pointer to a frame to a reference.
+    ///
+    /// # Safety
+    /// The caller needs to ensure the pointer and the lifetime is valid, and that the resulting
+    /// `Frame` gets put into `FrameRef` or `FrameRefMut` according to the input pointer
+    /// mutability.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn from_ptr(handle: *const ffi::VSFrame) -> Self {
+        unsafe {
+            Self {
+                handle: NonNull::new_unchecked(handle as *mut ffi::VSFrame),
+                #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+                format: unsafe {
+                    let ptr = API::get_cached().get_frame_format(&*handle);
+                    Format::from_ptr(ptr)
+                },
+                #[cfg(feature = "gte-vapoursynth-api-40")]
+                format: unsafe {
+                    let ptr = API::get_cached().get_frame_format(&*handle);
+                    Format::from_raw(*ptr)
                 },
                 _owner: PhantomData,
             }

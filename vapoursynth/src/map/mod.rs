@@ -195,12 +195,25 @@ fn handle_get_prop_error(error: i32) -> Result<()> {
     if error == 0 {
         Ok(())
     } else {
-        Err(match error {
-            x if x == ffi::VSGetPropErrors::peUnset as i32 => Error::KeyNotFound,
-            x if x == ffi::VSGetPropErrors::peType as i32 => Error::WrongValueType,
-            x if x == ffi::VSGetPropErrors::peIndex as i32 => Error::IndexOutOfBounds,
-            _ => unreachable!(),
-        })
+        #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+        {
+            Err(match error {
+                x if x == ffi::VSGetPropErrors::peUnset as i32 => Error::KeyNotFound,
+                x if x == ffi::VSGetPropErrors::peType as i32 => Error::WrongValueType,
+                x if x == ffi::VSGetPropErrors::peIndex as i32 => Error::IndexOutOfBounds,
+                _ => unreachable!(),
+            })
+        }
+
+        #[cfg(feature = "gte-vapoursynth-api-40")]
+        {
+            Err(match error {
+                x if x == ffi::VSMapPropertyError::peUnset as i32 => Error::KeyNotFound,
+                x if x == ffi::VSMapPropertyError::peType as i32 => Error::WrongValueType,
+                x if x == ffi::VSMapPropertyError::peIndex as i32 => Error::IndexOutOfBounds,
+                _ => unreachable!(),
+            })
+        }
     }
 }
 
@@ -357,6 +370,7 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn value_type_raw_unchecked(&self, key: &CStr) -> Result<ValueType> {
         unsafe {
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
             match API::get_cached().prop_get_type(self, key.as_ptr()) {
                 x if x == ffi::VSPropTypes::ptUnset as c_char => Err(Error::KeyNotFound),
                 x if x == ffi::VSPropTypes::ptInt as c_char => Ok(ValueType::Int),
@@ -365,6 +379,21 @@ impl<'elem> Map<'elem> {
                 x if x == ffi::VSPropTypes::ptNode as c_char => Ok(ValueType::Node),
                 x if x == ffi::VSPropTypes::ptFrame as c_char => Ok(ValueType::Frame),
                 x if x == ffi::VSPropTypes::ptFunction as c_char => Ok(ValueType::Function),
+                _ => unreachable!(),
+            }
+
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            match API::get_cached().prop_get_type(self, key.as_ptr()) {
+                x if x == ffi::VSPropertyType::ptUnset as i32 => Err(Error::KeyNotFound),
+                x if x == ffi::VSPropertyType::ptInt as i32 => Ok(ValueType::Int),
+                x if x == ffi::VSPropertyType::ptFloat as i32 => Ok(ValueType::Float),
+                x if x == ffi::VSPropertyType::ptData as i32 => Ok(ValueType::Data),
+                x if x == ffi::VSPropertyType::ptVideoNode as i32 => Ok(ValueType::Node),
+                x if x == ffi::VSPropertyType::ptVideoFrame as i32 => Ok(ValueType::Frame),
+                // TODO: Handle audio properly
+                x if x == ffi::VSPropertyType::ptAudioNode as i32 => Ok(ValueType::Node),
+                x if x == ffi::VSPropertyType::ptAudioFrame as i32 => Ok(ValueType::Frame),
+                x if x == ffi::VSPropertyType::ptFunction as i32 => Ok(ValueType::Function),
                 _ => unreachable!(),
             }
         }
@@ -411,12 +440,16 @@ impl<'elem> Map<'elem> {
             #[rustfmt::skip]
         macro_rules! touch_value {
             ($func:ident, $value:expr) => {{
+                #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+                let mode = ffi::VSPropAppendMode::paTouch;
+                #[cfg(feature = "gte-vapoursynth-api-40")]
+                let mode = ffi::VSMapAppendMode::maAppend;
                 let result =
                     API::get_cached().$func(
                         self,
                         key.as_ptr(),
                         $value,
-                        ffi::VSPropAppendMode::paTouch
+                        mode
                     );
                 debug_assert!(result == 0);
             }};
@@ -790,12 +823,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn append_int_raw_unchecked(&mut self, key: &CStr, x: i64) -> Result<()> {
         unsafe {
-            let error = API::get_cached().prop_set_int(
-                self,
-                key.as_ptr(),
-                x,
-                ffi::VSPropAppendMode::paAppend,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paAppend;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maAppend;
+            let error = API::get_cached().prop_set_int(self, key.as_ptr(), x, value);
 
             handle_append_prop_error(error)
         }
@@ -808,12 +840,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn append_float_raw_unchecked(&mut self, key: &CStr, x: f64) -> Result<()> {
         unsafe {
-            let error = API::get_cached().prop_set_float(
-                self,
-                key.as_ptr(),
-                x,
-                ffi::VSPropAppendMode::paAppend,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paAppend;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maAppend;
+            let error = API::get_cached().prop_set_float(self, key.as_ptr(), x, value);
 
             handle_append_prop_error(error)
         }
@@ -826,12 +857,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn append_data_raw_unchecked(&mut self, key: &CStr, x: &[u8]) -> Result<()> {
         unsafe {
-            let error = API::get_cached().prop_set_data(
-                self,
-                key.as_ptr(),
-                x,
-                ffi::VSPropAppendMode::paAppend,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paAppend;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maAppend;
+            let error = API::get_cached().prop_set_data(self, key.as_ptr(), x, value);
 
             handle_append_prop_error(error)
         }
@@ -848,12 +878,11 @@ impl<'elem> Map<'elem> {
         x: &Node<'elem>,
     ) -> Result<()> {
         unsafe {
-            let error = API::get_cached().prop_set_node(
-                self,
-                key.as_ptr(),
-                x.ptr(),
-                ffi::VSPropAppendMode::paAppend,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paAppend;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maAppend;
+            let error = API::get_cached().prop_set_node(self, key.as_ptr(), x.ptr(), value);
 
             handle_append_prop_error(error)
         }
@@ -870,12 +899,11 @@ impl<'elem> Map<'elem> {
         x: &Frame<'elem>,
     ) -> Result<()> {
         unsafe {
-            let error = API::get_cached().prop_set_frame(
-                self,
-                key.as_ptr(),
-                x.deref(),
-                ffi::VSPropAppendMode::paAppend,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paAppend;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maAppend;
+            let error = API::get_cached().prop_set_frame(self, key.as_ptr(), x.deref(), value);
 
             handle_append_prop_error(error)
         }
@@ -892,12 +920,11 @@ impl<'elem> Map<'elem> {
         x: &Function<'elem>,
     ) -> Result<()> {
         unsafe {
-            let error = API::get_cached().prop_set_func(
-                self,
-                key.as_ptr(),
-                x.ptr(),
-                ffi::VSPropAppendMode::paAppend,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paAppend;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maAppend;
+            let error = API::get_cached().prop_set_func(self, key.as_ptr(), x.ptr(), value);
 
             handle_append_prop_error(error)
         }
@@ -996,12 +1023,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn set_int_raw_unchecked(&mut self, key: &CStr, x: i64) {
         unsafe {
-            let error = API::get_cached().prop_set_int(
-                self,
-                key.as_ptr(),
-                x,
-                ffi::VSPropAppendMode::paReplace,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paReplace;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maReplace;
+            let error = API::get_cached().prop_set_int(self, key.as_ptr(), x, value);
 
             debug_assert!(error == 0);
         }
@@ -1031,12 +1057,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn set_float_raw_unchecked(&mut self, key: &CStr, x: f64) {
         unsafe {
-            let error = API::get_cached().prop_set_float(
-                self,
-                key.as_ptr(),
-                x,
-                ffi::VSPropAppendMode::paReplace,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paReplace;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maReplace;
+            let error = API::get_cached().prop_set_float(self, key.as_ptr(), x, value);
 
             debug_assert!(error == 0);
         }
@@ -1066,12 +1091,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn set_data_raw_unchecked(&mut self, key: &CStr, x: &[u8]) {
         unsafe {
-            let error = API::get_cached().prop_set_data(
-                self,
-                key.as_ptr(),
-                x,
-                ffi::VSPropAppendMode::paReplace,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paReplace;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maReplace;
+            let error = API::get_cached().prop_set_data(self, key.as_ptr(), x, value);
 
             debug_assert!(error == 0);
         }
@@ -1084,12 +1108,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn set_node_raw_unchecked(&mut self, key: &CStr, x: &Node<'elem>) {
         unsafe {
-            let error = API::get_cached().prop_set_node(
-                self,
-                key.as_ptr(),
-                x.ptr(),
-                ffi::VSPropAppendMode::paReplace,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paReplace;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maReplace;
+            let error = API::get_cached().prop_set_node(self, key.as_ptr(), x.ptr(), value);
 
             debug_assert!(error == 0);
         }
@@ -1102,12 +1125,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn set_frame_raw_unchecked(&mut self, key: &CStr, x: &Frame<'elem>) {
         unsafe {
-            let error = API::get_cached().prop_set_frame(
-                self,
-                key.as_ptr(),
-                x.deref(),
-                ffi::VSPropAppendMode::paReplace,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paReplace;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maReplace;
+            let error = API::get_cached().prop_set_frame(self, key.as_ptr(), x.deref(), value);
 
             debug_assert!(error == 0);
         }
@@ -1120,12 +1142,11 @@ impl<'elem> Map<'elem> {
     #[inline]
     pub(crate) unsafe fn set_function_raw_unchecked(&mut self, key: &CStr, x: &Function<'elem>) {
         unsafe {
-            let error = API::get_cached().prop_set_func(
-                self,
-                key.as_ptr(),
-                x.ptr(),
-                ffi::VSPropAppendMode::paReplace,
-            );
+            #[cfg(not(feature = "gte-vapoursynth-api-40"))]
+            let value = ffi::VSPropAppendMode::paReplace;
+            #[cfg(feature = "gte-vapoursynth-api-40")]
+            let value = ffi::VSMapAppendMode::maReplace;
+            let error = API::get_cached().prop_set_func(self, key.as_ptr(), x.ptr(), value);
 
             debug_assert!(error == 0);
         }

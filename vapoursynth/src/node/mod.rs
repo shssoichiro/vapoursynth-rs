@@ -18,6 +18,7 @@ use crate::video_info::VideoInfo;
 mod errors;
 pub use self::errors::GetFrameError;
 
+#[cfg(not(feature = "gte-vapoursynth-api-40"))]
 bitflags! {
     /// Node flags.
     pub struct Flags: i32 {
@@ -37,6 +38,7 @@ bitflags! {
     }
 }
 
+#[cfg(not(feature = "gte-vapoursynth-api-40"))]
 impl From<ffi::VSNodeFlags> for Flags {
     #[inline]
     fn from(flags: ffi::VSNodeFlags) -> Self {
@@ -47,7 +49,10 @@ impl From<ffi::VSNodeFlags> for Flags {
 /// A reference to a node in the constructed filter graph.
 #[derive(Debug)]
 pub struct Node<'core> {
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     handle: NonNull<ffi::VSNodeRef>,
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    handle: NonNull<ffi::VSNode>,
     _owner: PhantomData<&'core ()>,
 }
 
@@ -80,7 +85,23 @@ impl<'core> Node<'core> {
     /// # Safety
     /// The caller must ensure `handle` and the lifetime is valid and API is cached.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSNodeRef) -> Self {
+        unsafe {
+            Self {
+                handle: NonNull::new_unchecked(handle),
+                _owner: PhantomData,
+            }
+        }
+    }
+
+    /// Wraps `handle` in a `Node`.
+    ///
+    /// # Safety
+    /// The caller must ensure `handle` and the lifetime is valid and API is cached.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) unsafe fn from_ptr(handle: *mut ffi::VSNode) -> Self {
         unsafe {
             Self {
                 handle: NonNull::new_unchecked(handle),
@@ -91,7 +112,15 @@ impl<'core> Node<'core> {
 
     /// Returns the underlying pointer.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub(crate) fn ptr(&self) -> *mut ffi::VSNodeRef {
+        self.handle.as_ptr()
+    }
+
+    /// Returns the underlying pointer.
+    #[inline]
+    #[cfg(feature = "gte-vapoursynth-api-40")]
+    pub(crate) fn ptr(&self) -> *mut ffi::VSNode {
         self.handle.as_ptr()
     }
 
@@ -198,11 +227,49 @@ impl<'core> Node<'core> {
             }
         }
 
+        #[cfg(not(feature = "gte-vapoursynth-api-40"))]
         unsafe extern "system" fn c_callback(
             user_data: *mut c_void,
             frame: *const ffi::VSFrameRef,
             n: i32,
             node: *mut ffi::VSNodeRef,
+            error_msg: *const c_char,
+        ) {
+            unsafe {
+                // The actual lifetime isn't 'static, it's 'core, but we don't really have a way of
+                // retrieving it.
+                let user_data = Box::from_raw(user_data as *mut CallbackData<'static>);
+
+                let closure = panic::AssertUnwindSafe(move || {
+                    let frame = if frame.is_null() {
+                        debug_assert!(!error_msg.is_null());
+                        let error_msg = Cow::Borrowed(CStr::from_ptr(error_msg));
+                        Err(GetFrameError::new(error_msg))
+                    } else {
+                        debug_assert!(error_msg.is_null());
+                        Ok(FrameRef::from_ptr(frame))
+                    };
+
+                    let node = Node::from_ptr(node);
+
+                    debug_assert!(n >= 0);
+                    let n = n as usize;
+
+                    user_data.callback.call(frame, n, node);
+                });
+
+                if panic::catch_unwind(closure).is_err() {
+                    process::abort();
+                }
+            }
+        }
+
+        #[cfg(feature = "gte-vapoursynth-api-40")]
+        unsafe extern "system" fn c_callback(
+            user_data: *mut c_void,
+            frame: *const ffi::VSFrame,
+            n: i32,
+            node: *mut ffi::VSNode,
             error_msg: *const c_char,
         ) {
             unsafe {

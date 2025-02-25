@@ -77,8 +77,8 @@ vsscript-api-41 = ["vapoursynth-sys/vsscript-api-41", "gte-vsscript-api-41"]
 vsscript-api-42 = ["vapoursynth-sys/vsscript-api-42", "gte-vsscript-api-42"]
 
 # Features for linking to certain functions.
-vapoursynth-functions = []
-vsscript-functions = []
+vapoursynth-functions = ["vapoursynth-sys/vapoursynth-functions"]
+vsscript-functions = ["vapoursynth-sys/vsscript-functions"]
 
 # Utility features, not for outside use.
 gte-vapoursynth-api-31 = []
@@ -87,18 +87,18 @@ gte-vapoursynth-api-33 = ["gte-vapoursynth-api-32"]
 gte-vapoursynth-api-34 = ["gte-vapoursynth-api-33"]
 gte-vapoursynth-api-35 = ["gte-vapoursynth-api-34"]
 gte-vapoursynth-api-36 = ["gte-vapoursynth-api-35"]
-gte-vapoursynth-api-40 = []
+gte-vapoursynth-api-40 = ["gte-vapoursynth-api-36"]
 gte-vapoursynth-api-41 = ["gte-vapoursynth-api-40"]
 
 gte-vsscript-api-31 = []
 gte-vsscript-api-32 = ["gte-vsscript-api-31"]
-gte-vsscript-api-41 = []
+gte-vsscript-api-41 = ["gte-vsscript-api-32"]
 gte-vsscript-api-42 = ["gte-vsscript-api-41"]
 
 # For development.
 default = [
-    #     "vapoursynth-api-36",
-    #     "vsscript-api-32",
+    # "vapoursynth-api-36",
+    # "vsscript-api-32",
     "vapoursynth-api-41",
     "vsscript-api-42",
     "vapoursynth-functions",

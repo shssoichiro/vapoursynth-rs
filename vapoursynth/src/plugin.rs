@@ -42,6 +42,7 @@ impl<'core> Plugin<'core> {
     /// Values: the filter name followed by its argument string, separated by a semicolon.
     // TODO: parse the values on the crate side and return a nice struct.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub fn functions(&self) -> OwnedMap<'core> {
         unsafe { OwnedMap::from_ptr(API::get_cached().get_functions(self.handle.as_ptr())) }
     }
@@ -50,7 +51,10 @@ impl<'core> Plugin<'core> {
     /// location of the plugin, i.e. there are no symbolic links in the path.
     ///
     /// Path elements are always delimited with forward slashes.
-    #[cfg(feature = "gte-vapoursynth-api-31")]
+    #[cfg(all(
+        feature = "gte-vapoursynth-api-31",
+        not(feature = "gte-vapoursynth-api-40")
+    ))]
     #[inline]
     pub fn path(&self) -> Option<&'core CStr> {
         let ptr = unsafe { API::get_cached().get_plugin_path(self.handle.as_ptr()) };
@@ -76,6 +80,7 @@ impl<'core> Plugin<'core> {
     /// The exception to this are functions, for example `LoadPlugin`, which doesn't return any
     /// clips for obvious reasons.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub fn invoke(&self, name: &str, args: &Map<'core>) -> Result<OwnedMap<'core>, NulError> {
         let name = CString::new(name)?;
         Ok(unsafe {
@@ -89,6 +94,7 @@ impl<'core> Plugin<'core> {
 
     /// Registers a filter function to be exported by a non-readonly plugin.
     #[inline]
+    #[cfg(not(feature = "gte-vapoursynth-api-40"))]
     pub fn register_function<F: FilterFunction>(&self, filter_function: F) -> Result<(), NulError> {
         // TODO: this is almost the same code as plugins::ffi::call_register_function().
         let name_cstring = CString::new(filter_function.name())?;
